@@ -99,13 +99,15 @@
     <div id="perfTable" style="margin-top:8px"></div>
   </div>
   <div class="card card-full">
-    <div class="card-header"><span class="card-title">BTC/USDT Price & Trade Signals</span>
-      <div class="range-bar" data-chart="btc"><button class="range-btn" data-range="30">1M</button><button class="range-btn" data-range="90">3M</button><button class="range-btn" data-range="180">6M</button><button class="range-btn" data-range="365">1Y</button><button class="range-btn" data-range="1095">3Y</button><button class="range-btn" data-range="1825">5Y</button><button class="range-btn" data-range="0">All</button></div>
+    <div class="card-header">
+      <span class="card-title">BTC/USDT Price & Trade Signals</span>
+      <div class="range-bar" data-tf="btc"><button class="range-btn" data-tf="4h">4H</button><button class="range-btn active" data-tf="1d">1D</button><button class="range-btn" data-tf="1w">1W</button><button class="range-btn" data-tf="1m">1M</button></div>
     </div><div id="chartBTC" class="chart"></div>
   </div>
   <div class="card card-full">
-    <div class="card-header"><span class="card-title">ETH/USDT Price & Trade Signals</span>
-      <div class="range-bar" data-chart="eth"><button class="range-btn" data-range="30">1M</button><button class="range-btn" data-range="90">3M</button><button class="range-btn" data-range="180">6M</button><button class="range-btn" data-range="365">1Y</button><button class="range-btn" data-range="1095">3Y</button><button class="range-btn" data-range="1825">5Y</button><button class="range-btn" data-range="0">All</button></div>
+    <div class="card-header">
+      <span class="card-title">ETH/USDT Price & Trade Signals</span>
+      <div class="range-bar" data-tf="eth"><button class="range-btn" data-tf="4h">4H</button><button class="range-btn active" data-tf="1d">1D</button><button class="range-btn" data-tf="1w">1W</button><button class="range-btn" data-tf="1m">1M</button></div>
     </div><div id="chartETH" class="chart"></div>
   </div>
   <div class="card card-full">
@@ -122,6 +124,7 @@
 <script>
 var DATA = null;
 var currentRanges = { btc: 30, eth: 30, equity: 30 };
+var currentTF = { btc: '1d', eth: '1d' };
 var tradeFilterMode = 'all';
 
 /* Theme */
@@ -218,17 +221,139 @@ function renderPerfStats(s) {
 function round1(v) { return Math.round(v * 10) / 10; }
 
 /* Price Charts */
-function renderPriceChart(divId, ohlc, ema, trades, emaLabels, rangeDays) {
-  var c=chartColors(), fr=filterByRange(ohlc.t,rangeDays), t=msToDates(ohlc.t.slice(fr.start,fr.end));
-  var o=ohlc.o.slice(fr.start,fr.end),h=ohlc.h.slice(fr.start,fr.end),l=ohlc.l.slice(fr.start,fr.end),cl=ohlc.c.slice(fr.start,fr.end);
-  var candle={x:t,open:o,high:h,low:l,close:cl,type:'candlestick',name:'Price',increasing:{line:{color:c.up}},decreasing:{line:{color:c.down}}};
-  var emaT=[]; var keys=Object.keys(ema);
-  for(var i=0;i<keys.length;i+=2){var ef=filterByRange(ema[keys[i]],rangeDays); emaT.push({x:msToDates(ema[keys[i]].slice(ef.start,ef.end)),y:ema[keys[i+1]].slice(ef.start,ef.end),type:'scatter',mode:'lines',line:{width:1.5,color:i===0?'#448aff':'#ff9100'},name:emaLabels[i/2]});}
-  var cut=rangeDays===0?0:Date.now()-rangeDays*864e5, vt=trades.filter(function(tr){return tr.entry_time>=cut||tr.exit_time>=cut;});
-  var buyT={x:vt.map(function(tr){return msToDate(tr.entry_time);}),y:vt.map(function(tr){return tr.entry_price;}),type:'scatter',mode:'markers',name:'BUY',marker:{symbol:'triangle-up',size:12,color:c.up,line:{color:'#fff',width:1}},text:vt.map(function(tr){return 'Entry: '+fmtMoney(tr.entry_price)+'<br>SL: '+(tr.sl?fmtMoney(tr.sl):'N/A');}),hovertemplate:'%{text}<extra>BUY</extra>'};
-  var sellT={x:vt.map(function(tr){return msToDate(tr.exit_time);}),y:vt.map(function(tr){return tr.exit_price;}),type:'scatter',mode:'markers',name:'SELL',marker:{symbol:'triangle-down',size:12,color:c.down,line:{color:'#fff',width:1}},text:vt.map(function(tr){return 'Exit: '+fmtMoney(tr.exit_price)+'<br>P&L: '+pctStr(tr.return_pct);}),hovertemplate:'%{text}<extra>SELL</extra>'};
-  var ly=Object.assign({},baseLayout(),{height:450,yaxis:Object.assign({},baseLayout().yaxis,{title:'Price (USD)'}),xaxis:Object.assign({},baseLayout().xaxis,{rangeslider:{visible:false}})});
-  Plotly.newPlot(divId,[candle].concat(emaT,[buyT,sellT]),ly,CCFG);
+function renderPriceChart(divId, ohlcTF, emaTF, trades, emaLabels, tf) {
+  var ohlc = ohlcTF[tf];
+  var emaData = emaTF[tf];
+  var c = chartColors();
+  var t = msToDates(ohlc.t);
+  var candle = {x:t, open:ohlc.o, high:ohlc.h, low:ohlc.l, close:ohlc.c, type:'candlestick', name:'Price',
+    increasing:{line:{color:c.up}}, decreasing:{line:{color:c.down}}};
+
+  // EMAs
+  var emaT = [];
+  var emaKeys = Object.keys(emaData);
+  var emaColors = ['#448aff', '#ff9100'];
+  for (var i = 0; i < emaKeys.length; i++) {
+    var ed = emaData[emaKeys[i]];
+    emaT.push({x:msToDates(ed.t), y:ed.v,
+      type:'scatter', mode:'lines', line:{width:1.5, color:emaColors[i]}, name:emaLabels[i]});
+  }
+
+  // Buy/Sell markers (all trades)
+  var vt = trades;
+  // Candle half-width in ms (for centering markers)
+  var candleHalf = ohlc.t.length >= 2 ? (ohlc.t[1] - ohlc.t[0]) / 2 : 0;
+
+  function findCandle(tradeMs) {
+    var bestIdx = 0, bestDist = Infinity;
+    for (var ci = 0; ci < ohlc.t.length; ci++) {
+      var dist = Math.abs(ohlc.t[ci] - tradeMs);
+      if (dist < bestDist) { bestDist = dist; bestIdx = ci; }
+    }
+    return bestIdx;
+  }
+
+  function candleCenterX(tradeMs) {
+    var ci = findCandle(tradeMs);
+    return msToDate(ohlc.t[ci]);
+  }
+
+  var buyY = vt.map(function(tr) {
+    var ci = findCandle(tr.entry_time);
+    return ohlc.l[ci] * 0.995;
+  });
+  var sellY = vt.map(function(tr) {
+    var ci = findCandle(tr.exit_time);
+    return ohlc.h[ci] * 1.005;
+  });
+
+  // Build annotations (Binance-style B/S bubbles) — visual only, no hover
+  var annotations = [];
+  for (var ai = 0; ai < vt.length; ai++) {
+    var tr = vt[ai];
+    var bci = findCandle(tr.entry_time);
+    annotations.push({
+      x: candleCenterX(tr.entry_time), y: ohlc.l[bci] * 0.993,
+      text: 'B', font: {color:'#fff', size:11, family:'Arial Black'},
+      bgcolor: c.up, bordercolor: c.up, borderwidth: 1, borderpad: 4,
+      showarrow: true, arrowhead: 0, arrowwidth: 1.5, arrowcolor: c.up,
+      ay: 25, ax: 0, captureevents: false,
+    });
+    if (!tr.is_open) {
+      var sci = findCandle(tr.exit_time);
+      annotations.push({
+        x: candleCenterX(tr.exit_time), y: ohlc.h[sci] * 1.007,
+        text: 'S', font: {color:'#fff', size:11, family:'Arial Black'},
+        bgcolor: c.down, bordercolor: c.down, borderwidth: 1, borderpad: 4,
+        showarrow: true, arrowhead: 0, arrowwidth: 1.5, arrowcolor: c.down,
+        ay: -25, ax: 0, captureevents: false,
+      });
+    }
+  }
+
+  // Invisible scatter traces for hover info
+  var buyT = {x:vt.map(function(tr){return candleCenterX(tr.entry_time);}),
+    y:vt.map(function(tr){ var ci=findCandle(tr.entry_time); return ohlc.l[ci]; }),
+    type:'scatter', mode:'markers', name:'BUY', showlegend:false,
+    marker:{size:20, color:'rgba(0,0,0,0)'},
+    text:vt.map(function(tr){return 'Entry: '+fmtMoney(tr.entry_price)+'<br>SL: '+(tr.sl?fmtMoney(tr.sl):'N/A');}),
+    hovertemplate:'%{text}<extra>BUY</extra>'};
+  var completedTrades = vt.filter(function(tr){return !tr.is_open;});
+  var sellT = {x:completedTrades.map(function(tr){return candleCenterX(tr.exit_time);}),
+    y:completedTrades.map(function(tr){ var ci=findCandle(tr.exit_time); return ohlc.h[ci]; }),
+    type:'scatter', mode:'markers', name:'SELL', showlegend:false,
+    marker:{size:20, color:'rgba(0,0,0,0)'},
+    text:completedTrades.map(function(tr){return 'Exit: '+fmtMoney(tr.exit_price)+'<br>P&L: '+pctStr(tr.return_pct);}),
+    hovertemplate:'%{text}<extra>SELL</extra>'};
+
+  // Show last ~100 candles by default
+  var visibleCandles = 100;
+  var startIdx = Math.max(0, ohlc.t.length - visibleCandles);
+  var xStart = t[startIdx];
+  var xEnd = t[t.length - 1];
+
+  // Compute Y range from visible candles (with 5% padding)
+  var visLow = Infinity, visHigh = -Infinity;
+  for (var vi = startIdx; vi < ohlc.t.length; vi++) {
+    if (ohlc.l[vi] < visLow) visLow = ohlc.l[vi];
+    if (ohlc.h[vi] > visHigh) visHigh = ohlc.h[vi];
+  }
+  var yPad = (visHigh - visLow) * 0.08;
+
+  var ly = Object.assign({}, baseLayout(), {height:450,
+    yaxis:Object.assign({}, baseLayout().yaxis, {title:'Price (USD)', range:[visLow - yPad, visHigh + yPad]}),
+    xaxis:Object.assign({}, baseLayout().xaxis, {
+      rangeslider:{visible:false},
+      range:[xStart, xEnd],
+    }),
+    annotations: annotations,
+  });
+  Plotly.newPlot(divId, [candle].concat(emaT, [buyT, sellT]), ly, CCFG);
+
+  // Auto-fit Y axis when X range changes (pan/zoom)
+  document.getElementById(divId).on('plotly_relayout', function(ed) {
+    if (!ed || (!ed['xaxis.range[0]'] && !ed['xaxis.range'])) return;
+    var xMin, xMax;
+    if (ed['xaxis.range[0]']) {
+      xMin = new Date(ed['xaxis.range[0]']).getTime();
+      xMax = new Date(ed['xaxis.range[1]']).getTime();
+    } else if (ed['xaxis.range']) {
+      xMin = new Date(ed['xaxis.range'][0]).getTime();
+      xMax = new Date(ed['xaxis.range'][1]).getTime();
+    } else return;
+
+    var lo = Infinity, hi = -Infinity;
+    for (var yi = 0; yi < ohlc.t.length; yi++) {
+      if (ohlc.t[yi] >= xMin && ohlc.t[yi] <= xMax) {
+        if (ohlc.l[yi] < lo) lo = ohlc.l[yi];
+        if (ohlc.h[yi] > hi) hi = ohlc.h[yi];
+      }
+    }
+    if (lo < Infinity) {
+      var pad = (hi - lo) * 0.08;
+      Plotly.relayout(divId, {'yaxis.range': [lo - pad, hi + pad]});
+    }
+  });
 }
 
 /* Equity Chart */
@@ -324,12 +449,12 @@ document.getElementById('tradeFilter').addEventListener('click', function(ev) {
 /* Charts dispatcher */
 function renderAllCharts() {
   if (!DATA) return;
-  renderPriceChart('chartBTC', DATA.btc_ohlc, DATA.btc_ema, DATA.trades_btc, ['EMA 50','EMA 200'], currentRanges.btc);
-  renderPriceChart('chartETH', DATA.eth_ohlc, DATA.eth_ema, DATA.trades_eth, ['EMA 40','EMA 100'], currentRanges.eth);
+  renderPriceChart('chartBTC', DATA.btc_ohlc, DATA.btc_ema, DATA.trades_btc, ['EMA 50','EMA 200'], currentTF.btc);
+  renderPriceChart('chartETH', DATA.eth_ohlc, DATA.eth_ema, DATA.trades_eth, ['EMA 40','EMA 100'], currentTF.eth);
   renderEquityChart(DATA.equity, currentRanges.equity);
 }
 
-/* Range buttons */
+/* Range buttons (equity chart only) */
 document.querySelectorAll('.range-bar[data-chart]').forEach(function(bar) {
   var chartKey = bar.dataset.chart;
   bar.querySelectorAll('.range-btn').forEach(function(btn) {
@@ -338,6 +463,19 @@ document.querySelectorAll('.range-bar[data-chart]').forEach(function(bar) {
       bar.querySelectorAll('.range-btn').forEach(function(b){ b.classList.remove('active'); });
       btn.classList.add('active');
       currentRanges[chartKey] = parseInt(btn.dataset.range);
+      renderAllCharts();
+    });
+  });
+});
+
+/* Timeframe buttons */
+document.querySelectorAll('.range-bar[data-tf]').forEach(function(bar) {
+  var chartKey = bar.dataset.tf;
+  bar.querySelectorAll('.range-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      bar.querySelectorAll('.range-btn').forEach(function(b){ b.classList.remove('active'); });
+      btn.classList.add('active');
+      currentTF[chartKey] = btn.dataset.tf;
       renderAllCharts();
     });
   });

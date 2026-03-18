@@ -55,17 +55,51 @@ def compute_data():
                                      lookback=120, strong_weight=0.70,
                                      rebal_every=30, rebal_cost=0.001)
 
-    # Downsample to daily for chart
-    btc_d = btc_df.resample("1D").agg({"Open": "first", "High": "max", "Low": "min", "Close": "last"}).dropna()
-    eth_d = eth_df.resample("1D").agg({"Open": "first", "High": "max", "Low": "min", "Close": "last"}).dropna()
-
     def ts(idx): return [int(d.timestamp() * 1000) for d in idx]
 
-    # EMA overlays
-    btc_ema50 = btc_df[f"EMA_{config.EMA_MID}"].resample("1D").last().dropna()
-    btc_ema200 = btc_df[f"EMA_{config.EMA_SLOW}"].resample("1D").last().dropna()
-    eth_ema40 = eth_df["EMA_40"].resample("1D").last().dropna()
-    eth_ema100 = eth_df["EMA_100"].resample("1D").last().dropna()
+    def resample_ohlc(df, rule):
+        r = df.resample(rule).agg({"Open": "first", "High": "max", "Low": "min", "Close": "last"}).dropna()
+        return {"t": ts(r.index), "o": r["Open"].round(2).tolist(), "h": r["High"].round(2).tolist(),
+                "l": r["Low"].round(2).tolist(), "c": r["Close"].round(2).tolist()}
+
+    def resample_ema(series, rule):
+        r = series.resample(rule).last().dropna()
+        return {"t": ts(r.index), "v": r.round(2).tolist()}
+
+    # Multi-timeframe OHLCV + EMAs
+    tf_rules = {"4h": None, "1d": "1D", "1w": "1W", "1m": "1MS"}
+
+    btc_ohlc_tf, eth_ohlc_tf = {}, {}
+    btc_ema_tf, eth_ema_tf = {}, {}
+
+    for tf_key, rule in tf_rules.items():
+        if rule is None:
+            # 4H = raw data, just format it
+            btc_ohlc_tf[tf_key] = {"t": ts(btc_df.index), "o": btc_df["Open"].round(2).tolist(),
+                                    "h": btc_df["High"].round(2).tolist(), "l": btc_df["Low"].round(2).tolist(),
+                                    "c": btc_df["Close"].round(2).tolist()}
+            eth_ohlc_tf[tf_key] = {"t": ts(eth_df.index), "o": eth_df["Open"].round(2).tolist(),
+                                    "h": eth_df["High"].round(2).tolist(), "l": eth_df["Low"].round(2).tolist(),
+                                    "c": eth_df["Close"].round(2).tolist()}
+            btc_ema_tf[tf_key] = {
+                "ema50": {"t": ts(btc_df.index), "v": btc_df[f"EMA_{config.EMA_MID}"].round(2).tolist()},
+                "ema200": {"t": ts(btc_df.index), "v": btc_df[f"EMA_{config.EMA_SLOW}"].round(2).tolist()},
+            }
+            eth_ema_tf[tf_key] = {
+                "ema40": {"t": ts(eth_df.index), "v": eth_df["EMA_40"].round(2).tolist()},
+                "ema100": {"t": ts(eth_df.index), "v": eth_df["EMA_100"].round(2).tolist()},
+            }
+        else:
+            btc_ohlc_tf[tf_key] = resample_ohlc(btc_df, rule)
+            eth_ohlc_tf[tf_key] = resample_ohlc(eth_df, rule)
+            btc_ema_tf[tf_key] = {
+                "ema50": resample_ema(btc_df[f"EMA_{config.EMA_MID}"], rule),
+                "ema200": resample_ema(btc_df[f"EMA_{config.EMA_SLOW}"], rule),
+            }
+            eth_ema_tf[tf_key] = {
+                "ema40": resample_ema(eth_df["EMA_40"], rule),
+                "ema100": resample_ema(eth_df["EMA_100"], rule),
+            }
 
     # Trades (completed + open positions)
     btc_trades = _extract_trades(btc_stats, "BTC", None, None)
@@ -104,16 +138,10 @@ def compute_data():
 
     result = {
         "last_update": datetime.now(timezone.utc).isoformat(),
-        "btc_ohlc": {"t": ts(btc_d.index), "o": btc_d["Open"].round(2).tolist(),
-                      "h": btc_d["High"].round(2).tolist(), "l": btc_d["Low"].round(2).tolist(),
-                      "c": btc_d["Close"].round(2).tolist()},
-        "eth_ohlc": {"t": ts(eth_d.index), "o": eth_d["Open"].round(2).tolist(),
-                      "h": eth_d["High"].round(2).tolist(), "l": eth_d["Low"].round(2).tolist(),
-                      "c": eth_d["Close"].round(2).tolist()},
-        "btc_ema": {"ema50_t": ts(btc_ema50.index), "ema50": btc_ema50.round(2).tolist(),
-                     "ema200_t": ts(btc_ema200.index), "ema200": btc_ema200.round(2).tolist()},
-        "eth_ema": {"ema40_t": ts(eth_ema40.index), "ema40": eth_ema40.round(2).tolist(),
-                     "ema100_t": ts(eth_ema100.index), "ema100": eth_ema100.round(2).tolist()},
+        "btc_ohlc": btc_ohlc_tf,
+        "eth_ohlc": eth_ohlc_tf,
+        "btc_ema": btc_ema_tf,
+        "eth_ema": eth_ema_tf,
         "trades_btc": btc_trades,
         "trades_eth": eth_trades,
         "timeline": timeline,
