@@ -91,8 +91,13 @@ class ETHTrendStrategy(Strategy):
         self.trailing_stop = 0
         self.highest = 0
         self.bars_since_exit = 999
+        self.was_in_position = False
 
     def next(self):
+        if self.was_in_position and not self.position:
+            self.bars_since_exit = 0
+        self.was_in_position = bool(self.position)
+
         self.bars_since_exit += 1
         price = self.data.Close[-1]
         df = self.data.df
@@ -111,6 +116,7 @@ class ETHTrendStrategy(Strategy):
                 if self.emerg_pct > 0 and price < ema_s * (1 - self.emerg_pct):
                     self.position.close()
                     self.bars_since_exit = 0
+                    return
             else:
                 chandelier = self.highest - atr * self.atr_mult
                 if chandelier > self.trailing_stop:
@@ -122,6 +128,7 @@ class ETHTrendStrategy(Strategy):
                 if macd_h < 0 and price < ema_m:
                     self.position.close()
                     self.bars_since_exit = 0
+                    return
         else:
             if self.bars_since_exit < 2:
                 return

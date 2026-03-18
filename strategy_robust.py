@@ -83,8 +83,14 @@ class RobustTrendStrategy(Strategy):
         self.trailing_stop = 0
         self.highest = 0
         self.bars_since_exit = 999
+        self.was_in_position = False
 
     def next(self):
+        # Detect SL/TP exit by framework (position gone without us calling close)
+        if self.was_in_position and not self.position:
+            self.bars_since_exit = 0
+        self.was_in_position = bool(self.position)
+
         self.bars_since_exit += 1
         price = self.data.Close[-1]
         df = self.data.df
@@ -109,6 +115,7 @@ class RobustTrendStrategy(Strategy):
                 if self.emerg_pct > 0 and price < ema200 * (1 - self.emerg_pct):
                     self.position.close()
                     self.bars_since_exit = 0
+                    return
             else:
                 # ── BEAR MODE: trailing stop active ──
                 chandelier = self.highest - atr * self.atr_mult
@@ -124,6 +131,7 @@ class RobustTrendStrategy(Strategy):
                 if macd_h < 0 and price < ema50:
                     self.position.close()
                     self.bars_since_exit = 0
+                    return
 
         else:
             # ── LOOK FOR ENTRY ──
