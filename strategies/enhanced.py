@@ -14,7 +14,7 @@
 """
 
 from backtesting import Strategy
-import config
+from core import config
 
 
 class EnhancedBTCStrategy(Strategy):

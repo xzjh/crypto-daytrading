@@ -12,7 +12,7 @@ while limiting downside in bear markets.
 """
 
 from backtesting import Strategy
-import config
+from core import config
 
 
 def evaluate_signals(df, symbol):

@@ -113,37 +113,45 @@ python3 main.py backtest --plot
 ### Advanced Tools
 
 ```bash
-python3 optimizer.py             # Multi-round parameter optimization
-python3 walk_forward.py          # Walk-forward overfitting validation
-python3 run_comparison.py        # 4-strategy comparison (TF, ML, Rotation, B&H)
-python3 run_enhanced_test.py     # Enhanced strategy experiments
+python3 analysis/optimizer.py        # Multi-round parameter optimization
+python3 analysis/walk_forward.py     # Walk-forward overfitting validation
+python3 analysis/run_comparison.py   # 4-strategy comparison (TF, ML, Rotation, B&H)
+```
+
+### Dashboard
+
+```bash
+python3 web/server.py    # Start at http://localhost:8050
 ```
 
 ## Project Structure
 
 ```
-├── main.py                  # CLI: signal & backtest commands
-├── config.py                # Tunable parameters
-├── data_fetcher.py          # OHLCV via ccxt (Binance, CSV cache)
-├── indicators.py            # Technical indicators (EMA, RSI, MACD, BB, ATR)
-│
-├── strategy_robust.py       # BTC: hold-in-bull, protect-in-bear
-├── strategy_eth.py          # ETH: shorter EMAs, tighter stops
-├── strategy_portfolio.py    # Portfolio rotation (BTC/ETH momentum)
-├── backtester.py            # Backtesting engine with quarterly breakdown
-│
-├── strategy_ml.py           # ML regime classifier (experimental)
-├── ml_features.py           # Feature engineering for ML
-├── external_data.py         # Fear & Greed Index, Funding Rates
-├── strategy_enhanced.py     # Experimental: external data integration
-│
-├── strategy.py              # Legacy: multi-indicator confluence
-├── optimizer.py             # Parameter grid search
-├── walk_forward.py          # Walk-forward validation
-├── run_comparison.py        # 4-strategy comparison runner
-├── run_enhanced_test.py     # Enhanced strategy test runner
-├── portfolio.py             # Portfolio combination utilities
-└── requirements.txt         # Dependencies
+├── main.py                      # CLI: signal & backtest commands
+├── strategies/                  # Trading strategies
+│   ├── robust.py                # BTC: hold-in-bull, protect-in-bear
+│   ├── eth.py                   # ETH: shorter EMAs, tighter stops
+│   ├── portfolio.py             # Portfolio rotation (BTC/ETH momentum)
+│   ├── ml.py                    # ML regime classifier (experimental)
+│   ├── enhanced.py              # External data integration (experimental)
+│   └── legacy.py                # Legacy: multi-indicator confluence
+├── core/                        # Core modules
+│   ├── config.py                # Tunable parameters
+│   ├── data_fetcher.py          # OHLCV via ccxt (Binance, CSV cache)
+│   ├── indicators.py            # Technical indicators (EMA, RSI, MACD, BB, ATR)
+│   ├── backtester.py            # Backtesting engine with quarterly breakdown
+│   └── external_data.py         # Fear & Greed Index, Funding Rates
+├── analysis/                    # Analysis & validation tools
+│   ├── optimizer.py             # Parameter grid search
+│   ├── walk_forward.py          # Walk-forward overfitting validation
+│   ├── run_comparison.py        # 4-strategy comparison runner
+│   ├── ml_features.py           # Feature engineering for ML
+│   └── portfolio.py             # Portfolio combination utilities
+├── web/                         # Dashboard frontend
+│   ├── server.py                # FastAPI backend + data refresh
+│   ├── trades.py                # Trade timeline builder
+│   └── static/index.html        # Plotly.js interactive dashboard
+└── requirements.txt
 ```
 
 ## Installation

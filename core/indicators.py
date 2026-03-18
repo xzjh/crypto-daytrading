@@ -5,7 +5,7 @@ from ta.trend import EMAIndicator, MACD
 from ta.momentum import RSIIndicator
 from ta.volatility import BollingerBands, AverageTrueRange
 
-import config
+from core import config
 
 
 def add_indicators(df: pd.DataFrame) -> pd.DataFrame:

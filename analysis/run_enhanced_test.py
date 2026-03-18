@@ -4,14 +4,14 @@ import warnings
 import numpy as np
 from backtesting import Backtest
 
-import config
-from data_fetcher import fetch_ohlcv
-from indicators import add_indicators
-from strategy_eth import add_eth_indicators
-from external_data import merge_external_data, fetch_fear_greed, fetch_funding_rates
-from strategy_enhanced import EnhancedBTCStrategy, EnhancedETHStrategy
-from strategy_robust import RobustTrendStrategy
-from strategy_eth import ETHTrendStrategy
+from core import config
+from core.data_fetcher import fetch_ohlcv
+from core.indicators import add_indicators
+from strategies.eth import add_eth_indicators
+from core.external_data import merge_external_data, fetch_fear_greed, fetch_funding_rates
+from strategies.enhanced import EnhancedBTCStrategy, EnhancedETHStrategy
+from strategies.robust import RobustTrendStrategy
+from strategies.eth import ETHTrendStrategy
 
 from ta.trend import EMAIndicator
 

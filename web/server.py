@@ -14,19 +14,19 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from backtesting import Backtest
 
-import config
-from data_fetcher import fetch_ohlcv
-from indicators import add_indicators
-from strategy_eth import add_eth_indicators
-from strategy_robust import RobustTrendStrategy
-from strategy_eth import ETHTrendStrategy
-from strategy_portfolio import run_rotation_backtest
-from dashboard_trades import build_timeline
+from core import config
+from core.data_fetcher import fetch_ohlcv
+from core.indicators import add_indicators
+from strategies.eth import add_eth_indicators
+from strategies.robust import RobustTrendStrategy
+from strategies.eth import ETHTrendStrategy
+from strategies.portfolio import run_rotation_backtest
+from web.trades import build_timeline
 
 warnings.filterwarnings("ignore")
 
 app = FastAPI()
-app.mount("/static", StaticFiles(directory="dashboard"), name="static")
+app.mount("/static", StaticFiles(directory="web/static"), name="static")
 
 DATA = {}
 LOCK = threading.Lock()
@@ -563,7 +563,7 @@ def startup():
 
 @app.get("/")
 def index():
-    return FileResponse("dashboard/index.html")
+    return FileResponse("web/static/index.html")
 
 
 @app.get("/api/data")
@@ -574,4 +574,4 @@ def api_data():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("dashboard:app", host="0.0.0.0", port=8050, reload=False)
+    uvicorn.run("web.server:app", host="0.0.0.0", port=8050, reload=False)

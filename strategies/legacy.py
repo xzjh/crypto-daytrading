@@ -9,7 +9,7 @@ import pandas as pd
 import numpy as np
 from backtesting import Strategy
 
-import config
+from core import config
 
 # Ensure config has all needed attrs
 if not hasattr(config, "USE_TRAILING_STOP"):

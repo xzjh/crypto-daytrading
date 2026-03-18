@@ -5,15 +5,15 @@ import numpy as np
 import pandas as pd
 from backtesting import Backtest
 
-import config
-from data_fetcher import fetch_ohlcv
-from indicators import add_indicators
-from strategy_eth import add_eth_indicators
-from external_data import merge_external_data
-from strategy_robust import RobustTrendStrategy
-from strategy_eth import ETHTrendStrategy
-from strategy_ml import MLStrategy, precompute_ml_signals
-from strategy_portfolio import run_rotation_backtest, walk_forward_rotation
+from core import config
+from core.data_fetcher import fetch_ohlcv
+from core.indicators import add_indicators
+from strategies.eth import add_eth_indicators
+from core.external_data import merge_external_data
+from strategies.robust import RobustTrendStrategy
+from strategies.eth import ETHTrendStrategy
+from strategies.ml import MLStrategy, precompute_ml_signals
+from strategies.portfolio import run_rotation_backtest, walk_forward_rotation
 
 warnings.filterwarnings("ignore")
 

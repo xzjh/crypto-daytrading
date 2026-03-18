@@ -4,9 +4,9 @@ import warnings
 import numpy as np
 from backtesting import Backtest
 
-import config
-from strategy_robust import RobustTrendStrategy
-from strategy_eth import ETHTrendStrategy
+from core import config
+from strategies.robust import RobustTrendStrategy
+from strategies.eth import ETHTrendStrategy
 
 warnings.filterwarnings("ignore")
 

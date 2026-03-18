@@ -5,13 +5,13 @@ import sys
 
 import numpy as np
 
-import config
-from data_fetcher import fetch_ohlcv
-from indicators import add_indicators
-from strategy_robust import evaluate_signals as btc_evaluate_signals
-from strategy_eth import evaluate_signals as eth_evaluate_signals, add_eth_indicators
-from backtester import run_backtest, run_period_comparison
-from strategy_portfolio import run_rotation_backtest
+from core import config
+from core.data_fetcher import fetch_ohlcv
+from core.indicators import add_indicators
+from strategies.robust import evaluate_signals as btc_evaluate_signals
+from strategies.eth import evaluate_signals as eth_evaluate_signals, add_eth_indicators
+from core.backtester import run_backtest, run_period_comparison
+from strategies.portfolio import run_rotation_backtest
 
 
 def print_signal(result: dict):

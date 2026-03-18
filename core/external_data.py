@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 import ccxt
 import pandas as pd
 
-import config
+from core import config
 
 CACHE_DIR = config.CACHE_DIR
 

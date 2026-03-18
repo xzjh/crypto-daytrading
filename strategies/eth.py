@@ -10,7 +10,7 @@ from backtesting import Strategy
 from ta.trend import EMAIndicator, MACD
 from ta.momentum import RSIIndicator
 from ta.volatility import AverageTrueRange
-import config
+from core import config
 
 
 # ETH-specific EMA periods

@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 import ccxt
 import pandas as pd
 
-import config
+from core import config
 
 
 def _get_exchange():

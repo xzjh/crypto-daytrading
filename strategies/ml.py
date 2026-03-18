@@ -15,8 +15,8 @@ import pandas as pd
 import lightgbm as lgb
 from backtesting import Strategy
 
-import config
-from ml_features import build_features
+from core import config
+from analysis.ml_features import build_features
 
 
 def precompute_ml_signals(df: pd.DataFrame, train_bars=2160, retrain_every=540,

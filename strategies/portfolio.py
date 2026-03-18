@@ -10,12 +10,12 @@ import numpy as np
 import pandas as pd
 from backtesting import Backtest
 
-import config
-from data_fetcher import fetch_ohlcv
-from indicators import add_indicators
-from strategy_eth import add_eth_indicators
-from strategy_robust import RobustTrendStrategy
-from strategy_eth import ETHTrendStrategy
+from core import config
+from core.data_fetcher import fetch_ohlcv
+from core.indicators import add_indicators
+from strategies.eth import add_eth_indicators
+from strategies.robust import RobustTrendStrategy
+from strategies.eth import ETHTrendStrategy
 
 
 def run_rotation_backtest(btc_eq, eth_eq, lookback=120, strong_weight=0.65,
