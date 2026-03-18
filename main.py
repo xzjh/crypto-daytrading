@@ -3,12 +3,15 @@
 import argparse
 import sys
 
+import numpy as np
+
 import config
 from data_fetcher import fetch_ohlcv
 from indicators import add_indicators
 from strategy_robust import evaluate_signals as btc_evaluate_signals
 from strategy_eth import evaluate_signals as eth_evaluate_signals, add_eth_indicators
 from backtester import run_backtest, run_period_comparison
+from strategy_portfolio import run_rotation_backtest
 
 
 def print_signal(result: dict):
@@ -75,15 +78,12 @@ def print_period_comparison(results: list, symbol: str):
 
     all_alphas = [r["alpha"] for r in results]
     all_rets = [r["strategy_ret"] for r in results]
-    all_sharpes = [r["sharpe"] for r in results if r["sharpe"] is not None]
 
     print(f"\n  SUMMARY:")
     print(f"  Quarters tested:      {len(results)}")
     print(f"  Strategy profitable:  {sum(1 for r in all_rets if r > 0)}/{len(results)}")
     print(f"  Alpha positive:       {sum(1 for a in all_alphas if a > 0)}/{len(results)}")
     print(f"  Mean Alpha:           {sum(all_alphas)/len(all_alphas):+.2f}%")
-    if all_sharpes:
-        print(f"  Mean Sharpe:          {sum(all_sharpes)/len(all_sharpes):.4f}")
 
     if bull_alphas:
         print(f"\n  In BULL quarters ({len(bull_alphas)}): mean alpha = {sum(bull_alphas)/len(bull_alphas):+.1f}%")
@@ -104,6 +104,10 @@ def _prepare_data(symbol, days):
 def cmd_signal(args):
     """Fetch latest data and output current signals."""
     symbols = args.symbols if args.symbols else config.SYMBOLS
+
+    # Collect equity curves for rotation signal
+    btc_eq = eth_eq = None
+
     for symbol in symbols:
         print(f"\nFetching {symbol} data...")
         df = _prepare_data(symbol, 250)
@@ -113,23 +117,71 @@ def cmd_signal(args):
             result = btc_evaluate_signals(df, symbol)
         print_signal(result)
 
+    # Portfolio rotation signal (if both symbols present)
+    if len(symbols) >= 2 and any("BTC" in s for s in symbols) and any("ETH" in s for s in symbols):
+        print(f"\n{'='*55}")
+        print(f"  PORTFOLIO ROTATION SIGNAL")
+        print(f"  {'─'*51}")
+
+        btc_df = _prepare_data("BTC/USDT", 250)
+        eth_df = _prepare_data("ETH/USDT", 250)
+
+        # Use recent returns as momentum proxy
+        btc_ret_20d = btc_df["Close"].iloc[-1] / btc_df["Close"].iloc[-120] - 1
+        eth_ret_20d = eth_df["Close"].iloc[-1] / eth_df["Close"].iloc[-120] - 1
+
+        if btc_ret_20d > eth_ret_20d:
+            alloc = "BTC 70% / ETH 30%"
+        else:
+            alloc = "BTC 30% / ETH 70%"
+
+        print(f"  BTC 20d momentum:  {btc_ret_20d:>+.1%}")
+        print(f"  ETH 20d momentum:  {eth_ret_20d:>+.1%}")
+        print(f"  Recommended:       {alloc}")
+        print(f"{'='*55}")
+
 
 def cmd_backtest(args):
     """Run backtests on historical data."""
     symbols = args.symbols if args.symbols else config.SYMBOLS
     days = args.days
 
+    equity_curves = {}
     for symbol in symbols:
         print(f"\nFetching {symbol} data ({days} days)...")
         df = _prepare_data(symbol, days)
         print(f"Running backtest on {len(df)} candles...")
 
-        metrics, _ = run_backtest(df, symbol, plot=args.plot)
+        metrics, stats = run_backtest(df, symbol, plot=args.plot)
         print_metrics(metrics)
+        equity_curves[symbol] = stats["_equity_curve"]["Equity"]
 
-        # Quarterly breakdown
         period_results = run_period_comparison(df, symbol)
         print_period_comparison(period_results, symbol)
+
+    # Portfolio rotation backtest (if both BTC and ETH present)
+    btc_key = next((k for k in equity_curves if "BTC" in k), None)
+    eth_key = next((k for k in equity_curves if "ETH" in k), None)
+
+    if btc_key and eth_key:
+        print(f"\n{'='*55}")
+        print(f"  PORTFOLIO ROTATION BACKTEST")
+        print(f"  {'─'*51}")
+        print(f"  Config: LB=120 bars, Weight=70/30, Rebal=30 bars")
+
+        result = run_rotation_backtest(
+            equity_curves[btc_key], equity_curves[eth_key],
+            lookback=120, strong_weight=0.70,
+            rebal_every=30, rebal_cost=0.001,
+        )
+
+        print(f"  {'─'*51}")
+        print(f"  Portfolio Return:  {result['total_return']:>+.1f}%")
+        print(f"  Sharpe Ratio:      {result['sharpe']:.4f}")
+        print(f"  Max Drawdown:      {result['max_dd']:.1f}%")
+        print(f"  Rebalances:        {result['n_rebalances']}")
+        print(f"  BTC overweight:    {result['btc_overweight_pct']:.0f}% of time")
+        print(f"{'='*55}")
 
 
 def main():
