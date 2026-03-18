@@ -141,12 +141,53 @@ def compute_data():
             "btc_trades": btc_stats["# Trades"], "eth_trades": eth_stats["# Trades"],
             "port_ret": rotation["total_return"], "port_sharpe": rotation["sharpe"],
             "port_dd": rotation["max_dd"],
+            "yearly": _compute_yearly(btc_equity, eth_equity, rotation["equity"],
+                                       btc_df["Close"], eth_df["Close"]),
         },
     }
 
     with LOCK:
         DATA.update(result)
     print(f"[{datetime.now().strftime('%H:%M:%S')}] Data ready.")
+
+
+def _compute_yearly(btc_eq, eth_eq, port_eq, btc_close, eth_close):
+    """Compute per-year returns, Sharpe, and Alpha for all strategies."""
+    import numpy as np
+    years = []
+    for year in range(btc_eq.index[0].year, btc_eq.index[-1].year + 1):
+        s, e = f"{year}-01-01", f"{year}-12-31"
+        bs = btc_eq.loc[s:e]
+        es = eth_eq.loc[s:e]
+        ps = port_eq.loc[s:e]
+        bc = btc_close.reindex(bs.index, method="ffill")
+        ec = eth_close.reindex(es.index, method="ffill")
+        if len(bs) < 10:
+            continue
+
+        btc_ret = round((bs.iloc[-1] / bs.iloc[0] - 1) * 100, 1)
+        eth_ret = round((es.iloc[-1] / es.iloc[0] - 1) * 100, 1)
+        port_ret = round((ps.iloc[-1] / ps.iloc[0] - 1) * 100, 1)
+        btc_bh = round((bc.iloc[-1] / bc.iloc[0] - 1) * 100, 1)
+        eth_bh = round((ec.iloc[-1] / ec.iloc[0] - 1) * 100, 1)
+        avg_bh = round((btc_bh + eth_bh) / 2, 1)
+
+        # Per-year Sharpe (annualized from 4H returns)
+        def sharpe(eq_series):
+            rets = eq_series.pct_change().dropna()
+            if len(rets) < 20 or rets.std() == 0:
+                return None
+            ann = rets.mean() / rets.std() * np.sqrt(365 * 6)
+            return round(ann, 2)
+
+        years.append({
+            "year": year,
+            "btc_strat": btc_ret, "eth_strat": eth_ret, "port": port_ret,
+            "btc_bh": btc_bh, "eth_bh": eth_bh,
+            "btc_sharpe": sharpe(bs), "eth_sharpe": sharpe(es), "port_sharpe": sharpe(ps),
+            "alpha": round(port_ret - avg_bh, 1),
+        })
+    return years
 
 
 def _is_in_trade(stats):
