@@ -92,6 +92,7 @@ class ETHTrendStrategy(Strategy):
         self.highest = 0
         self.bars_since_exit = 999
         self.was_in_position = False
+        self.entry_log = []
 
     def next(self):
         if self.was_in_position and not self.position:
@@ -145,3 +146,9 @@ class ETHTrendStrategy(Strategy):
                 self.highest = price
                 self.buy(sl=sl_price, size=size)
                 self.bars_since_exit = 0
+                self.entry_log.append({
+                    "time": self.data.index[-1],
+                    "price": price,
+                    "sl": sl_price,
+                    "size": size,
+                })

@@ -197,8 +197,14 @@ function renderPriceChart(divId, ohlc, ema, trades, emaLabels, rangeDays) {
 function renderEquityChart(eq, rangeDays) {
   var fr=filterByRange(eq.t,rangeDays), step=Math.max(1,Math.floor((fr.end-fr.start)/2000));
   function ds(a){return a.slice(fr.start,fr.end).filter(function(_,i){return i%step===0;});}
-  var traces=[{x:ds(msToDates(eq.t)),y:ds(eq.btc),type:'scatter',mode:'lines',name:'BTC Strategy',line:{color:'#ff9100',width:2}},{x:ds(msToDates(eq.t)),y:ds(eq.eth),type:'scatter',mode:'lines',name:'ETH Strategy',line:{color:'#b388ff',width:2}},{x:ds(msToDates(eq.t)),y:ds(eq.portfolio),type:'scatter',mode:'lines',name:'Portfolio Rotation',line:{color:'#00e5ff',width:2.5}}];
-  Plotly.newPlot('chartEquity',traces,Object.assign({},baseLayout(),{height:350,yaxis:Object.assign({},baseLayout().yaxis,{title:'Value (base=100)'})}),CCFG);
+  var traces=[
+    {x:ds(msToDates(eq.t)),y:ds(eq.btc_bh),type:'scatter',mode:'lines',name:'BTC B&H',line:{color:'#ff9100',width:1,dash:'dot'},opacity:0.5},
+    {x:ds(msToDates(eq.t)),y:ds(eq.eth_bh),type:'scatter',mode:'lines',name:'ETH B&H',line:{color:'#b388ff',width:1,dash:'dot'},opacity:0.5},
+    {x:ds(msToDates(eq.t)),y:ds(eq.btc),type:'scatter',mode:'lines',name:'BTC Strategy',line:{color:'#ff9100',width:2}},
+    {x:ds(msToDates(eq.t)),y:ds(eq.eth),type:'scatter',mode:'lines',name:'ETH Strategy',line:{color:'#b388ff',width:2}},
+    {x:ds(msToDates(eq.t)),y:ds(eq.portfolio),type:'scatter',mode:'lines',name:'Portfolio Rotation',line:{color:'#00e5ff',width:2.5}},
+  ];
+  Plotly.newPlot('chartEquity',traces,Object.assign({},baseLayout(),{height:400,yaxis:Object.assign({},baseLayout().yaxis,{title:'Value (base=100)'})}),CCFG);
 }
 
 /* Timeline */
@@ -235,10 +241,14 @@ function renderTimeline(events) {
       tag = prevHeld ? ' <span style="font-size:10px;color:var(--muted)">(ADD)</span>'
                      : ' <span style="font-size:10px;color:var(--muted)">(OPEN)</span>';
     } else if (e.type === 'SELL') {
-      var assetRemains = (e.symbol === 'BTC' && (e.real_btc || 0) > 0.1) || (e.symbol === 'ETH' && (e.real_eth || 0) > 0.1);
-      tag = assetRemains ? ' <span style="font-size:10px;color:var(--muted)">(REDUCE)</span>'
-                         : ' <span style="font-size:10px;color:var(--muted)">(CLOSE)</span>';
-      if (e.sl_triggered) tag += ' <span style="font-size:10px;color:var(--red)">SL</span>';
+      if (e.is_open) {
+        tag = ' <span style="font-size:10px;color:var(--cyan)">HOLDING</span>';
+      } else {
+        var assetRemains = (e.symbol === 'BTC' && (e.real_btc || 0) > 0.1) || (e.symbol === 'ETH' && (e.real_eth || 0) > 0.1);
+        tag = assetRemains ? ' <span style="font-size:10px;color:var(--muted)">(REDUCE)</span>'
+                           : ' <span style="font-size:10px;color:var(--muted)">(CLOSE)</span>';
+        if (e.sl_triggered) tag += ' <span style="font-size:10px;color:var(--red)">SL</span>';
+      }
     }
     var actionHtml = '<span class="trade-type ' + typeCls + '">' + e.type + '</span> '
       + pctLabel + '<span class="trade-asset ' + ac(e.symbol) + '">' + e.symbol + '</span>' + tag;

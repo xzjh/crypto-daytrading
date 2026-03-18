@@ -67,9 +67,13 @@ def compute_data():
     eth_ema40 = eth_df["EMA_40"].resample("1D").last().dropna()
     eth_ema100 = eth_df["EMA_100"].resample("1D").last().dropna()
 
-    # Trades
+    # Trades (completed + open positions)
     btc_trades = _extract_trades(btc_stats, "BTC", None, None)
     eth_trades = _extract_trades(eth_stats, "ETH", None, None)
+    btc_strat = btc_stats._strategy if hasattr(btc_stats, "_strategy") else None
+    eth_strat = eth_stats._strategy if hasattr(eth_stats, "_strategy") else None
+    _add_open_positions(btc_trades, btc_stats, "BTC", btc_df, btc_strat)
+    _add_open_positions(eth_trades, eth_stats, "ETH", eth_df, eth_strat)
 
     # Rebalances
     rebalances = _extract_rebalances(rotation["weights_btc"], btc_trades, eth_trades, btc_df["Close"], eth_df["Close"], rotation["equity"])
@@ -84,6 +88,12 @@ def compute_data():
     btc_eq_n = (btc_equity / btc_equity.iloc[0] * 100).round(2).tolist()
     eth_eq_n = (eth_equity / eth_equity.iloc[0] * 100).round(2).tolist()
     port_eq_n = (rotation["equity"] * 100).round(2).tolist()
+
+    # B&H price lines (normalized to 100)
+    btc_close = btc_df["Close"].reindex(btc_equity.index, method="ffill")
+    eth_close = eth_df["Close"].reindex(btc_equity.index, method="ffill")
+    btc_bh_n = (btc_close / btc_close.iloc[0] * 100).round(2).tolist()
+    eth_bh_n = (eth_close / eth_close.iloc[0] * 100).round(2).tolist()
 
     # Current state
     bl, el = btc_df.iloc[-1], eth_df.iloc[-1]
@@ -107,7 +117,8 @@ def compute_data():
         "trades_btc": btc_trades,
         "trades_eth": eth_trades,
         "timeline": timeline,
-        "equity": {"t": eq_dates, "btc": btc_eq_n, "eth": eth_eq_n, "portfolio": port_eq_n},
+        "equity": {"t": eq_dates, "btc": btc_eq_n, "eth": eth_eq_n, "portfolio": port_eq_n,
+                   "btc_bh": btc_bh_n, "eth_bh": eth_bh_n},
         "current": {
             "btc_price": round(bl["Close"], 2), "eth_price": round(el["Close"], 2),
             "btc_rsi": round(bl[f"RSI_{config.RSI_PERIOD}"], 1),
@@ -115,8 +126,8 @@ def compute_data():
             "btc_regime": "BULL" if btc_gc else "BEAR",
             "eth_regime": "BULL" if eth_gc else "BEAR",
             "btc_momentum": btc_mom, "eth_momentum": eth_mom,
-            "btc_in_trade": _is_in_trade(btc_trades),
-            "eth_in_trade": _is_in_trade(eth_trades),
+            "btc_in_trade": bool(_is_in_trade(btc_stats)),
+            "eth_in_trade": bool(_is_in_trade(eth_stats)),
         },
         "stats": {
             "btc_ret": round(btc_stats["Return [%]"], 1),
@@ -138,15 +149,89 @@ def compute_data():
     print(f"[{datetime.now().strftime('%H:%M:%S')}] Data ready.")
 
 
-def _is_in_trade(trades):
-    """Check if the last trade hasn't exited yet (still in position)."""
-    if not trades:
+def _is_in_trade(stats):
+    """Check if the strategy has an open position at the end of data.
+
+    Detects by comparing equity at last completed trade exit vs final equity.
+    If they differ significantly, there's an open position.
+    """
+    trades = stats._trades
+    equity = stats["_equity_curve"]["Equity"]
+    if len(trades) == 0:
         return False
-    last = trades[-1]
-    # If the last trade's exit time is very close to the last data point,
-    # the strategy already exited. Check if exit_time < now.
-    now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
-    return last["exit_time"] >= now_ms
+    last_exit = trades.iloc[-1]["ExitTime"]
+    eq_at_exit = equity.loc[:last_exit].iloc[-1]
+    eq_final = equity.iloc[-1]
+    return abs(eq_final - eq_at_exit) > 100
+
+
+def _add_open_positions(trades_list, stats, symbol, df, strategy_instance):
+    """Detect and add open positions that backtesting.py hasn't closed yet."""
+    equity = stats["_equity_curve"]["Equity"]
+    completed_trades = stats._trades
+
+    if len(completed_trades) == 0:
+        return
+
+    last_exit = completed_trades.iloc[-1]["ExitTime"]
+    eq_at_exit = float(equity.loc[:last_exit].iloc[-1])
+    eq_final = float(equity.iloc[-1])
+
+    if abs(eq_final - eq_at_exit) <= 10000:
+        return
+
+    # Find the stable (flat) equity value after last trade settles
+    eq_after = equity.loc[last_exit:]
+    # Skip first few bars (settlement period), then find the flat value
+    settle_start = min(6, len(eq_after) - 1)
+    flat_value = float(eq_after.iloc[settle_start])
+
+    # Now find the first bar where equity diverges from this flat value
+    entry_time = None
+    for i in range(settle_start + 1, len(eq_after)):
+        if abs(float(eq_after.iloc[i]) - flat_value) > 10000:
+            entry_time = eq_after.index[i]
+            break
+
+    # Re-check: is there really an open position (using flat value)?
+    if abs(eq_final - flat_value) <= 10000:
+        return
+
+    if entry_time is None:
+        return
+
+    # Entry price = close at entry bar
+    entry_price = float(df["Close"].asof(entry_time))
+    current_price = float(df["Close"].iloc[-1])
+    entry_ms = int(entry_time.timestamp() * 1000)
+    now_ms = int(df.index[-1].timestamp() * 1000)
+
+    # Get SL from strategy's entry_log (the last entry is the open position)
+    sl_price = None
+    if strategy_instance and hasattr(strategy_instance, "entry_log") and strategy_instance.entry_log:
+        last_entry = strategy_instance.entry_log[-1]
+        sl_price = round(last_entry["sl"], 2)
+        entry_price = round(last_entry["price"], 2)  # Use exact price from strategy
+
+    price_change_pct = (current_price - entry_price) / entry_price if entry_price > 0 else 0
+    equity_change = eq_final - flat_value
+    estimated_value = abs(equity_change / price_change_pct) if abs(price_change_pct) > 0.001 else 0
+
+    trades_list.append({
+        "entry_time": entry_ms,
+        "exit_time": now_ms,
+        "entry_price": round(entry_price, 2),
+        "exit_price": round(current_price, 2),
+        "size": 0,
+        "entry_value": round(estimated_value, 2),
+        "exit_value": round(estimated_value * (1 + price_change_pct), 2),
+        "pnl": round(equity_change, 2),
+        "return_pct": round(price_change_pct * 100, 2),
+        "sl": sl_price,
+        "sl_triggered": False,
+        "symbol": symbol,
+        "is_open": True,
+    })
 
 
 def _extract_trades(stats, symbol, all_btc_trades_df, all_eth_trades_df):

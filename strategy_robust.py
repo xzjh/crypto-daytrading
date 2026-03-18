@@ -84,6 +84,7 @@ class RobustTrendStrategy(Strategy):
         self.highest = 0
         self.bars_since_exit = 999
         self.was_in_position = False
+        self.entry_log = []  # Record every entry for dashboard
 
     def next(self):
         # Detect SL/TP exit by framework (position gone without us calling close)
@@ -159,3 +160,9 @@ class RobustTrendStrategy(Strategy):
                 self.highest = price
                 self.buy(sl=sl_price, size=size)
                 self.bars_since_exit = 0
+                self.entry_log.append({
+                    "time": self.data.index[-1],
+                    "price": price,
+                    "sl": sl_price,
+                    "size": size,
+                })

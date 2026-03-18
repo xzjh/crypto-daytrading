@@ -140,17 +140,20 @@ def build_timeline(btc_trades, eth_trades, rebalances,
                 elif sym == r.get("sell_asset"):
                     detail += " | REBAL -" + str(r["sell_from"] - r["sell_to"]) + "% @ $" + f"{r['sell_price']:,.0f}" + " on " + fmt_date(r["time"])
 
-        events.append({
-            "time": ms_exit, "type": "SELL", "symbol": sym,
-            "price": t["exit_price"], "trade_pct": sell_pct,
-            "sl": None, "trade_return": t["return_pct"],
-            "sl_triggered": t.get("sl_triggered", False),
-            "nav": nav, "fund_return": round((nav - 1) * 100, 2),
-            "real_btc": rb, "real_eth": re, "real_cash": rc,
-            "target_btc": tb, "target_eth": te,
-            "detail": detail,
-            "_sort": 0,  # SELL sorts before BUY at same timestamp
-        })
+        # Skip the fake "sell" for open positions — they're still held
+        if not t.get("is_open", False):
+            events.append({
+                "time": ms_exit, "type": "SELL", "symbol": sym,
+                "price": t["exit_price"], "trade_pct": sell_pct,
+                "sl": None, "trade_return": t["return_pct"],
+                "sl_triggered": t.get("sl_triggered", False),
+                "is_open": False,
+                "nav": nav, "fund_return": round((nav - 1) * 100, 2),
+                "real_btc": rb, "real_eth": re, "real_cash": rc,
+                "target_btc": tb, "target_eth": te,
+                "detail": detail,
+                "_sort": 0,
+            })
 
     # Sort: descending time, SELL before BUY at same timestamp
     events.sort(key=lambda ev: (-ev["time"], ev["_sort"]))
