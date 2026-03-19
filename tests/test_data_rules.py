@@ -18,8 +18,7 @@ D = DATA_SNAPSHOT  # alias for brevity
 
 TIMELINE_KEYS = {
     "time", "type", "symbol", "price", "trade_pct", "remaining_pct",
-    "sl", "trade_return", "sl_triggered", "nav", "fund_return",
-    "real_btc", "real_eth", "real_cash", "target_btc", "target_eth",
+    "sl", "trade_return", "sl_triggered",
     "detail", "tag", "_sort",
 }
 
@@ -29,7 +28,7 @@ TRADE_KEYS = {
     "sl", "sl_triggered", "symbol",
 }
 
-EQUITY_KEYS = {"t", "btc", "eth", "portfolio", "btc_bh", "eth_bh"}
+EQUITY_KEYS = {"t", "btc", "eth", "btc_bh", "eth_bh"}
 
 CURRENT_KEYS = {
     "btc_price", "eth_price", "btc_rsi", "eth_rsi",
@@ -40,13 +39,13 @@ CURRENT_KEYS = {
 STATS_KEYS = {
     "btc_ret", "eth_ret", "btc_bh", "eth_bh",
     "btc_sharpe", "eth_sharpe", "btc_dd", "eth_dd",
-    "btc_trades", "eth_trades", "port_ret", "port_sharpe", "port_dd",
+    "btc_trades", "eth_trades",
     "yearly",
 }
 
 YEARLY_KEYS = {
-    "year", "btc_strat", "eth_strat", "port", "btc_bh", "eth_bh",
-    "btc_sharpe", "eth_sharpe", "port_sharpe", "btc_dd", "eth_dd", "alpha",
+    "year", "btc_strat", "eth_strat", "btc_bh", "eth_bh",
+    "btc_sharpe", "eth_sharpe", "btc_dd", "eth_dd",
 }
 
 
@@ -107,20 +106,6 @@ class TestTimelineDataRules(unittest.TestCase):
     def test_sl_triggered_is_bool(self):
         for e in D["timeline"]:
             self.assertIsInstance(e["sl_triggered"], bool)
-
-    def test_nav_positive(self):
-        for e in D["timeline"]:
-            self.assertGreater(e["nav"], 0)
-
-    def test_fund_return_numeric(self):
-        for e in D["timeline"]:
-            self.assertIsInstance(e["fund_return"], (int, float))
-
-    def test_allocation_non_negative(self):
-        for e in D["timeline"]:
-            self.assertGreaterEqual(e["real_btc"], 0)
-            self.assertGreaterEqual(e["real_eth"], 0)
-            self.assertGreaterEqual(e["real_cash"], 0)
 
     def test_tag_values(self):
         for e in D["timeline"]:
@@ -202,7 +187,7 @@ class TestEquityDataRules(unittest.TestCase):
         """All equity arrays must have the same length as t."""
         eq = D["equity"]
         n = len(eq["t"])
-        for key in ["btc", "eth", "portfolio", "btc_bh", "eth_bh"]:
+        for key in ["btc", "eth", "btc_bh", "eth_bh"]:
             self.assertEqual(len(eq[key]), n, f"equity['{key}'] len {len(eq[key])} != {n}")
 
     def test_t_sorted_ascending(self):
@@ -218,7 +203,7 @@ class TestEquityDataRules(unittest.TestCase):
                     self.assertFalse(math.isnan(v), f"equity['{key}'][{i}] NaN")
 
     def test_all_positive(self):
-        for key in ["btc", "eth", "portfolio", "btc_bh", "eth_bh"]:
+        for key in ["btc", "eth", "btc_bh", "eth_bh"]:
             for i, v in enumerate(D["equity"][key]):
                 self.assertGreater(v, 0, f"equity['{key}'][{i}] = {v}")
 
@@ -276,14 +261,13 @@ class TestStatsDataRules(unittest.TestCase):
     def test_drawdowns_non_positive(self):
         self.assertLessEqual(D["stats"]["btc_dd"], 0)
         self.assertLessEqual(D["stats"]["eth_dd"], 0)
-        self.assertLessEqual(D["stats"]["port_dd"], 0)
 
     def test_returns_numeric(self):
-        for key in ["btc_ret", "eth_ret", "btc_bh", "eth_bh", "port_ret"]:
+        for key in ["btc_ret", "eth_ret", "btc_bh", "eth_bh"]:
             self.assertIsInstance(D["stats"][key], (int, float))
 
     def test_sharpe_type(self):
-        for key in ["btc_sharpe", "eth_sharpe", "port_sharpe"]:
+        for key in ["btc_sharpe", "eth_sharpe"]:
             v = D["stats"][key]
             self.assertTrue(v is None or isinstance(v, (int, float)))
 
@@ -437,20 +421,58 @@ class TestTradeSentryRules(unittest.TestCase):
                 self.assertEqual(t["size"], 0)
 
 
+class TestCooldownRule(unittest.TestCase):
+    """After selling, there must be a cooldown of at least 3 bars (12h) before buying again."""
+
+    COOLDOWN_MS = 3 * 4 * 3600 * 1000  # 3 bars * 4h = 12 hours in ms
+
+    def test_no_same_bar_sell_then_buy(self):
+        """BUY must not happen on the same bar as a preceding SELL for the same symbol."""
+        for sym in ["BTC", "ETH"]:
+            events = sorted(
+                [e for e in D["timeline"] if e["symbol"] == sym],
+                key=lambda e: (e["time"], e["_sort"])
+            )
+            for i in range(len(events) - 1):
+                if events[i]["type"] == "SELL" and events[i+1]["type"] == "BUY" \
+                        and events[i]["time"] == events[i+1]["time"]:
+                    self.fail(
+                        f"{sym}: SELL and BUY on same bar at {events[i]['time']} "
+                        f"— cooldown violated")
+
+    def test_cooldown_between_sell_and_next_buy(self):
+        """After a SELL, the next BUY for the same symbol must be >= 3 bars later."""
+        for sym in ["BTC", "ETH"]:
+            events = sorted(
+                [e for e in D["timeline"] if e["symbol"] == sym],
+                key=lambda e: (e["time"], e["_sort"])
+            )
+            last_sell_time = None
+            for e in events:
+                if e["type"] == "SELL" and e["tag"] == "Close":
+                    last_sell_time = e["time"]
+                elif e["type"] == "BUY" and e["tag"] == "Open" and last_sell_time is not None:
+                    gap = e["time"] - last_sell_time
+                    self.assertGreaterEqual(gap, self.COOLDOWN_MS,
+                        f"{sym}: BUY at {e['time']} only {gap // 3600000}h after "
+                        f"SELL at {last_sell_time} — need >= 12h cooldown")
+                    last_sell_time = None
+
+
 class TestEquitySentryRules(unittest.TestCase):
 
     def test_starts_at_100(self):
-        for key in ["btc", "eth", "portfolio", "btc_bh", "eth_bh"]:
+        for key in ["btc", "eth", "btc_bh", "eth_bh"]:
             self.assertEqual(D["equity"][key][0], 100,
                              f"equity['{key}'][0] != 100")
 
     def test_no_zero_values(self):
-        for key in ["btc", "eth", "portfolio", "btc_bh", "eth_bh"]:
+        for key in ["btc", "eth", "btc_bh", "eth_bh"]:
             for i, v in enumerate(D["equity"][key]):
                 self.assertNotEqual(v, 0, f"equity['{key}'][{i}] is zero")
 
     def test_reasonable_range(self):
-        for key in ["btc", "eth", "portfolio", "btc_bh", "eth_bh"]:
+        for key in ["btc", "eth", "btc_bh", "eth_bh"]:
             for i, v in enumerate(D["equity"][key]):
                 self.assertTrue(1 <= v <= 100000,
                                 f"equity['{key}'][{i}] = {v}")

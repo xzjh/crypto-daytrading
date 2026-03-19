@@ -1,82 +1,23 @@
-"""Build unified trade timeline for the dashboard.
-
-All percentages are relative to the TOTAL portfolio value.
-real_pct = (trade_value / strategy_equity) * rotation_weight
-"""
+"""Build unified trade timeline for the dashboard."""
 
 import pandas as pd
 from datetime import datetime, timezone
 
 
-def build_timeline(btc_trades, eth_trades, rebalances,
-                   portfolio_equity, rotation_weights,
-                   btc_equity, eth_equity):
-    """Build BUY + SELL event timeline with correct portfolio %."""
+def build_timeline(btc_trades, eth_trades, btc_equity, eth_equity):
+    """Build BUY + SELL event timeline with correct position %."""
     events = []
 
-    # Portfolio equity (starts at 1.0)
-    peq_idx, peq_vals = portfolio_equity.index, portfolio_equity.values
-
-    def nav_at(ms):
-        ts = pd.Timestamp(ms, unit="ms", tz="UTC")
-        i = peq_idx.searchsorted(ts, side="right") - 1
-        i = max(0, min(i, len(peq_vals) - 1))
-        if i + 1 < len(peq_vals) and abs(peq_idx[i + 1] - ts) < abs(peq_idx[i] - ts):
-            i = i + 1
-        return round(float(peq_vals[i]), 4)
-
-    # Per-strategy equity (starts at BACKTEST_CASH = 1M)
     def strategy_equity_at(eq_series, ms):
         ts = pd.Timestamp(ms, unit="ms", tz="UTC")
         i = eq_series.index.searchsorted(ts, side="right") - 1
         i = max(0, min(i, len(eq_series) - 1))
         return float(eq_series.iloc[i])
 
-    # Rotation weight
-    w_idx, w_vals = rotation_weights.index, rotation_weights.values
-
-    def weight_at(ms):
-        ts = pd.Timestamp(ms, unit="ms", tz="UTC")
-        i = w_idx.searchsorted(ts, side="right") - 1
-        return float(w_vals[max(0, i)]) if i >= 0 else 0.5
-
-    def in_trade(symbol_trades, ms):
-        for t in symbol_trades:
-            if t["entry_time"] <= ms <= t["exit_time"]:
-                return True
-        return False
-
-    def real_pct_of_portfolio(trade_value, strategy_eq):
-        """What % of strategy equity does this trade represent?"""
+    def trade_pct(trade_value, strategy_eq):
         if strategy_eq <= 0:
             return 0
         return round(trade_value / strategy_eq * 100, 1)
-
-    def compute_allocation(ms, btc_in, eth_in, btc_trades_l, eth_trades_l):
-        """Compute real holding % of total portfolio for each asset."""
-        w = weight_at(ms)
-
-        real_btc = 0
-        if btc_in:
-            beq = strategy_equity_at(btc_equity, ms)
-            for tr in btc_trades_l:
-                if tr["entry_time"] <= ms <= tr["exit_time"]:
-                    real_btc = real_pct_of_portfolio(tr["entry_value"], beq)
-                    break
-
-        real_eth = 0
-        if eth_in:
-            eeq = strategy_equity_at(eth_equity, ms)
-            for tr in eth_trades_l:
-                if tr["entry_time"] <= ms <= tr["exit_time"]:
-                    real_eth = real_pct_of_portfolio(tr["entry_value"], eeq)
-                    break
-
-        real_cash = round(max(0, 100 - real_btc - real_eth), 1)
-        target_btc = round(w * 100) if btc_in else 0
-        target_eth = round((1 - w) * 100) if eth_in else 0
-
-        return real_btc, real_eth, real_cash, target_btc, target_eth
 
     def fmt_date(ms):
         return datetime.fromtimestamp(ms / 1000, tz=timezone.utc).strftime("%Y-%m-%d")
@@ -87,57 +28,29 @@ def build_timeline(btc_trades, eth_trades, rebalances,
         ms_exit = t["exit_time"]
 
         # ── BUY ──
-        nav = nav_at(ms_entry)
         strat_eq_entry = strategy_equity_at(btc_equity if sym == "BTC" else eth_equity, ms_entry)
-        trade_pct = real_pct_of_portfolio(t["entry_value"], strat_eq_entry)
-
-        other_in = in_trade(eth_trades if sym == "BTC" else btc_trades, ms_entry)
-        btc_in = True if sym == "BTC" else other_in
-        eth_in = True if sym == "ETH" else other_in
-        rb, re, rc, tb, te = compute_allocation(ms_entry, btc_in, eth_in, btc_trades, eth_trades)
+        pct = trade_pct(t["entry_value"], strat_eq_entry)
 
         events.append({
             "time": ms_entry, "type": "BUY", "symbol": sym,
-            "price": t["entry_price"], "trade_pct": trade_pct,
+            "price": t["entry_price"], "trade_pct": pct,
             "sl": t.get("sl"), "trade_return": None,
             "sl_triggered": False,
-            "nav": nav, "fund_return": round((nav - 1) * 100, 2),
-            "real_btc": rb, "real_eth": re, "real_cash": rc,
-            "target_btc": tb, "target_eth": te,
             "detail": "",
-            "_sort": 1,  # BUY sorts after SELL at same timestamp
+            "_sort": 1,
         })
 
         # ── SELL ──
-        nav = nav_at(ms_exit)
-        strat_eq_exit = strategy_equity_at(btc_equity if sym == "BTC" else eth_equity, ms_exit)
-        sell_pct = real_pct_of_portfolio(t["exit_value"], strat_eq_exit)
-
-        other_trades = eth_trades if sym == "BTC" else btc_trades
-        other_in = any(ot["entry_time"] <= ms_exit <= ot["exit_time"] for ot in other_trades)
-        btc_in = False if sym == "BTC" else other_in
-        eth_in = False if sym == "ETH" else other_in
-        rb, re, rc, tb, te = compute_allocation(ms_exit, btc_in, eth_in, btc_trades, eth_trades)
-
-        detail = "Entry: $" + f"{t['entry_price']:,.0f}" + " on " + fmt_date(ms_entry)
-        for r in rebalances:
-            if ms_entry < r["time"] < ms_exit:
-                if sym == r.get("buy_asset"):
-                    detail += " | REBAL +" + str(r["buy_to"] - r["buy_from"]) + "% @ $" + f"{r['buy_price']:,.0f}" + " on " + fmt_date(r["time"])
-                elif sym == r.get("sell_asset"):
-                    detail += " | REBAL -" + str(r["sell_from"] - r["sell_to"]) + "% @ $" + f"{r['sell_price']:,.0f}" + " on " + fmt_date(r["time"])
-
-        # Skip the fake "sell" for open positions — they're still held
         if not t.get("is_open", False):
+            strat_eq_exit = strategy_equity_at(btc_equity if sym == "BTC" else eth_equity, ms_exit)
+            sell_pct = trade_pct(t["exit_value"], strat_eq_exit)
+            detail = "Entry: $" + f"{t['entry_price']:,.0f}" + " on " + fmt_date(ms_entry)
+
             events.append({
                 "time": ms_exit, "type": "SELL", "symbol": sym,
                 "price": t["exit_price"], "trade_pct": sell_pct,
                 "sl": None, "trade_return": t["return_pct"],
                 "sl_triggered": t.get("sl_triggered", False),
-                "is_open": False,
-                "nav": nav, "fund_return": round((nav - 1) * 100, 2),
-                "real_btc": rb, "real_eth": re, "real_cash": rc,
-                "target_btc": tb, "target_eth": te,
                 "detail": detail,
                 "_sort": 0,
             })
@@ -151,9 +64,6 @@ def build_timeline(btc_trades, eth_trades, rebalances,
         eq = strategy_equity_at(eq_series, t)
         price = e["price"]
 
-        # Sum value of all trades still open AFTER this event
-        # For SELL: exclude trades that start at this exact time (they're from
-        # a same-time BUY, not yet conceptually opened when this SELL happens)
         remaining_value = 0
         for tr in sym_trades:
             entry_ok = tr["entry_time"] <= t if e["type"] == "BUY" else tr["entry_time"] < t
@@ -170,23 +80,23 @@ def build_timeline(btc_trades, eth_trades, rebalances,
     for e in events:
         if merged and merged[-1]["time"] == e["time"] and merged[-1]["symbol"] == e["symbol"] and merged[-1]["type"] == e["type"]:
             merged[-1]["trade_pct"] = round(merged[-1]["trade_pct"] + e["trade_pct"], 1)
-            merged[-1]["remaining_pct"] = e["remaining_pct"]  # take last value
+            merged[-1]["remaining_pct"] = e["remaining_pct"]
         else:
             merged.append(dict(e))
 
-    # Round to 1 decimal place (no round-to-5)
+    # Round to 1 decimal place
     for e in merged:
         if e.get("trade_pct"):
             e["trade_pct"] = round(e["trade_pct"], 1)
         e["remaining_pct"] = round(e.get("remaining_pct", 0), 1)
 
-    # Tag events: Open/Close vs Add/Reduce using remaining_pct
-    prev_remaining = {}  # symbol -> remaining_pct of previous event
-    for e in merged:  # already sorted chronologically
+    # Tag events: Open/Close vs Add/Reduce
+    prev_remaining = {}
+    for e in merged:
         sym = e["symbol"]
         if e["type"] == "BUY":
             e["tag"] = "Open" if prev_remaining.get(sym, 0) == 0 else "Add"
-        else:  # SELL
+        else:
             if e["remaining_pct"] == 0:
                 e["tag"] = "Close"
             else:

@@ -170,27 +170,6 @@ class TestTradeTableRendering(unittest.TestCase):
                 rendered = pct_str(e["trade_return"])
                 self.assertIn("%", rendered)
 
-    def test_nav_display_logic(self):
-        """JS: e.nav ? e.nav.toFixed(4) : '—'
-        If nav is falsy (0, null, undefined), shows '—'.
-        Nav should never be 0 in practice."""
-        for e in D["timeline"]:
-            nav = e["nav"]
-            if nav:
-                rendered = f"{nav:.4f}"
-                self.assertGreater(len(rendered), 0)
-            else:
-                # This would display '—' — nav=0 is a data bug
-                self.fail(f"NAV is falsy ({nav}) at {e['time']} — would show '—'")
-
-    def test_fund_return_display(self):
-        """JS: e.fund_return != null ? pctStr(e.fund_return) : '—'"""
-        for e in D["timeline"]:
-            fr = e["fund_return"]
-            self.assertIsNotNone(fr, f"fund_return is None at {e['time']}")
-            rendered = pct_str(fr)
-            self.assertIn("%", rendered)
-
     def test_position_bar_uses_remaining_pct(self):
         """JS: displayPct = Math.min(e.remaining_pct || 0, 130)"""
         for e in D["timeline"]:
@@ -360,11 +339,6 @@ class TestEquityChartData(unittest.TestCase):
         self.assertEqual(len(eq["t"]), len(eq["eth_bh"]),
                          f"ETH B&H: t({len(eq['t'])}) != eth_bh({len(eq['eth_bh'])})")
 
-    def test_portfolio_chart_xy_match(self):
-        """Portfolio: x=eq.t, y=eq.portfolio."""
-        eq = D["equity"]
-        self.assertEqual(len(eq["t"]), len(eq["portfolio"]),
-                         f"Portfolio: t({len(eq['t'])}) != portfolio({len(eq['portfolio'])})")
 
 
 # ─────────────────────────────────────────────────────────
@@ -442,10 +416,10 @@ class TestFrontendDataContract(unittest.TestCase):
 
     def test_timeline_events_have_frontend_fields(self):
         """Frontend accesses: time, type, symbol, price, trade_pct, remaining_pct,
-        sl, trade_return, sl_triggered, nav, fund_return, tag, detail."""
+        sl, trade_return, sl_triggered, tag, detail."""
         frontend_fields = {
             "time", "type", "symbol", "price", "trade_pct", "remaining_pct",
-            "sl", "trade_return", "sl_triggered", "nav", "fund_return",
+            "sl", "trade_return", "sl_triggered",
             "tag", "detail",
         }
         for e in D["timeline"]:
@@ -477,8 +451,8 @@ class TestFrontendDataContract(unittest.TestCase):
             self.assertFalse(missing, f"{key} missing timeframes: {missing}")
 
     def test_equity_has_frontend_keys(self):
-        """Frontend accesses: t, btc, eth, portfolio, btc_bh, eth_bh."""
-        required = {"t", "btc", "eth", "portfolio", "btc_bh", "eth_bh"}
+        """Frontend accesses: t, btc, eth, btc_bh, eth_bh."""
+        required = {"t", "btc", "eth", "btc_bh", "eth_bh"}
         missing = required - set(D["equity"].keys())
         self.assertFalse(missing, f"Equity missing: {missing}")
 

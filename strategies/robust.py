@@ -66,7 +66,7 @@ class RobustTrendStrategy(Strategy):
     def init(self):
         self.highest_equity = self.equity
         self.reduced = False
-        self.bars_since_exit = 999
+        self.exit_bar = -999
         self.was_in_position = False
         self.entry_log = []
 
@@ -82,11 +82,11 @@ class RobustTrendStrategy(Strategy):
         return min(round(base * self.leverage, 2), 0.99)
 
     def next(self):
+        cur_bar = len(self.data) - 1
         # Detect framework SL exit
         if self.was_in_position and not self.position:
-            self.bars_since_exit = 0
+            self.exit_bar = cur_bar
         self.was_in_position = bool(self.position)
-        self.bars_since_exit += 1
 
         price = self.data.Close[-1]
         df = self.data.df
@@ -96,7 +96,21 @@ class RobustTrendStrategy(Strategy):
             if self.equity > self.highest_equity:
                 self.highest_equity = self.equity
 
-            # Drawdown control: reduce position
+            # Check exit first — don't modify position if we're about to exit
+            below = price < ema * (1 - self.exit_buffer)
+            ema_prev = df[self.ema_col].iloc[-self.slope_bars] if len(df) > self.slope_bars else ema
+            if below and ema < ema_prev:
+                sl_at_exit = ema * (1 - self.exit_buffer)
+                self.position.close()
+                self.reduced = False
+                self.exit_bar = cur_bar
+                self.entry_log.append({
+                    "time": self.data.index[-1], "price": price,
+                    "sl": sl_at_exit, "size": 0, "action": "close",
+                })
+                return
+
+            # Drawdown control (only if not exiting)
             if self.dd_reduce < 1.0:
                 dd = (self.highest_equity - self.equity) / self.highest_equity
                 if dd > self.dd_reduce and not self.reduced:
@@ -105,29 +119,15 @@ class RobustTrendStrategy(Strategy):
                     if cur > rs + 0.1:
                         self.sell(size=(cur - rs) / cur)
                         self.reduced = True
-                # Restore position when recovered
                 if self.reduced and self.equity >= self.highest_equity * 0.95:
                     cur = self.position.size * price / self.equity
                     add = self._vol_size(df) - cur
                     if add > 0.05:
                         self.buy(size=add)
                     self.reduced = False
-
-            # Exit: price below EMA and EMA itself is falling
-            below = price < ema * (1 - self.exit_buffer)
-            ema_prev = df[self.ema_col].iloc[-self.slope_bars] if len(df) > self.slope_bars else ema
-            if below and ema < ema_prev:
-                sl_at_exit = ema * (1 - self.exit_buffer)
-                self.position.close()
-                self.reduced = False
-                self.entry_log.append({
-                    "time": self.data.index[-1], "price": price,
-                    "sl": sl_at_exit, "size": 0, "action": "close",
-                })
-                return
         else:
-            # Entry: price above EMA
-            if self.bars_since_exit < self.cooldown:
+            # Entry: price above EMA (with cooldown)
+            if cur_bar - self.exit_bar < self.cooldown:
                 return
             if price > ema * (1 + self.entry_buffer):
                 size = self._vol_size(df)

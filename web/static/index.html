@@ -247,8 +247,6 @@ function tradeHover(e) {
   var line3 = 'Price: ' + fmtMoney(e.price);
   var lines = [line1, line2, line3];
   if (e.type === 'SELL' && e.trade_return != null) lines.push('Trade P&L: ' + pctStr(e.trade_return));
-  if (e.nav) lines.push('NAV: ' + e.nav.toFixed(4));
-  if (e.fund_return != null) lines.push('Fund Return: ' + pctStr(e.fund_return));
   var pos = Math.round(Math.min(e.remaining_pct || 0, 130));
   lines.push('Position: ' + pos + '%');
   return lines.join('<br>');
@@ -345,12 +343,9 @@ function renderTrades(divId, events, filterMode) {
   var filtered = events;
   if (filterMode === 'buy') filtered = events.filter(function(e){ return e.type==='BUY'; });
   else if (filterMode === 'sell') filtered = events.filter(function(e){ return e.type==='SELL'; });
-  var html = '<table class="trades-table"><thead><tr><th>Date</th><th>Action</th><th>Price</th><th>Trade P&L</th><th>NAV</th><th>Fund Return</th><th style="min-width:100px">Position</th></tr></thead><tbody>';
+  var html = '<table class="trades-table"><thead><tr><th>Date</th><th>Action</th><th>Price</th><th>Trade P&L</th><th style="min-width:100px">Position</th></tr></thead><tbody>';
   for (var i = 0; i < filtered.length; i++) {
     var e = filtered[i];
-    var navStr = e.nav ? e.nav.toFixed(4) : '\u2014';
-    var fRetCls = e.fund_return != null ? pctClass(e.fund_return) : '';
-    var fRetStr = e.fund_return != null ? pctStr(e.fund_return) : '\u2014';
     var typeCls = e.type === 'BUY' ? 'trade-buy' : 'trade-sell';
     var pct = e.trade_pct || 0;
     var pctLabel = pct ? Math.round(pct) + '% ' : '';
@@ -373,8 +368,7 @@ function renderTrades(divId, events, filterMode) {
       + '</div>'
       + '<span style="font-size:10px;min-width:35px">' + displayPct + '%</span></div>';
 
-    var title = e.detail || '';
-    html += '<tr title="' + title + '"><td>' + fmtDateTime(e.time) + '</td><td><span class="trade-type ' + typeCls + '">' + e.type + '</span> ' + pctLabel + '<span class="trade-asset ' + ac(e.symbol) + '">' + e.symbol + '</span>' + tag + '</td><td>' + fmtMoney(e.price) + '</td><td>' + tPnl + '</td><td>' + navStr + '</td><td class="' + fRetCls + '">' + fRetStr + '</td><td>' + posBar + '</td></tr>';
+    html += '<tr><td>' + fmtDateTime(e.time) + '</td><td><span class="trade-type ' + typeCls + '">' + e.type + '</span> ' + pctLabel + '<span class="trade-asset ' + ac(e.symbol) + '">' + e.symbol + '</span>' + tag + '</td><td>' + fmtMoney(e.price) + '</td><td>' + tPnl + '</td><td>' + posBar + '</td></tr>';
   }
   html += '</tbody></table>';
   document.getElementById(divId).innerHTML = html;
