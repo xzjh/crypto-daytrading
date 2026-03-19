@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -e
+echo "Running data tests before push..."
+if python3 -c "import pytest" 2>/dev/null; then
+    python3 -m pytest tests/ -x -q --tb=short
+else
+    python3 -m unittest discover -s tests -p "test_*.py" -v
+fi

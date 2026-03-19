@@ -44,10 +44,10 @@ def compute_data():
 
     btc_stats = Backtest(btc_df, RobustTrendStrategy, cash=config.BACKTEST_CASH,
                          commission=0.0018, exclusive_orders=False,
-                         trade_on_close=True, margin=1/1.3).run()
+                         trade_on_close=True).run()
     eth_stats = Backtest(eth_df, ETHTrendStrategy, cash=config.BACKTEST_CASH,
                          commission=0.0018, exclusive_orders=False,
-                         trade_on_close=True, margin=1/1.3).run()
+                         trade_on_close=True).run()
 
     btc_equity = btc_stats["_equity_curve"]["Equity"]
     eth_equity = eth_stats["_equity_curve"]["Equity"]
@@ -120,7 +120,8 @@ def compute_data():
     # Equity curves (normalized to 100)
     eq_dates = ts(btc_equity.index)
     btc_eq_n = (btc_equity / btc_equity.iloc[0] * 100).round(2).tolist()
-    eth_eq_n = (eth_equity / eth_equity.iloc[0] * 100).round(2).tolist()
+    eth_eq_reindexed = eth_equity.reindex(btc_equity.index, method="ffill")
+    eth_eq_n = (eth_eq_reindexed / eth_eq_reindexed.iloc[0] * 100).round(2).tolist()
     port_eq_n = (rotation["equity"] * 100).round(2).tolist()
 
     # B&H price lines (normalized to 100)
@@ -156,6 +157,8 @@ def compute_data():
             "btc_momentum": btc_mom, "eth_momentum": eth_mom,
             "btc_in_trade": bool(_is_in_trade(btc_stats)),
             "eth_in_trade": bool(_is_in_trade(eth_stats)),
+            "btc_position_pct": _current_position_pct(timeline, "BTC", _is_in_trade(btc_stats)),
+            "eth_position_pct": _current_position_pct(timeline, "ETH", _is_in_trade(eth_stats)),
         },
         "stats": {
             "btc_ret": round(btc_stats["Return [%]"], 1),
@@ -208,14 +211,28 @@ def _compute_yearly(btc_eq, eth_eq, port_eq, btc_close, eth_close):
             ann = rets.mean() / rets.std() * np.sqrt(365 * 6)
             return round(ann, 2)
 
+        def max_dd(eq_series):
+            pk = eq_series.expanding().max()
+            return round(((eq_series - pk) / pk).min() * 100, 1)
+
         years.append({
             "year": year,
             "btc_strat": btc_ret, "eth_strat": eth_ret, "port": port_ret,
             "btc_bh": btc_bh, "eth_bh": eth_bh,
             "btc_sharpe": sharpe(bs), "eth_sharpe": sharpe(es), "port_sharpe": sharpe(ps),
+            "btc_dd": max_dd(bs), "eth_dd": max_dd(es),
             "alpha": round(port_ret - avg_bh, 1),
         })
     return years
+
+
+def _current_position_pct(timeline, symbol, in_trade):
+    """Get current position % from timeline events."""
+    # Timeline is sorted descending — find the most recent event for this symbol
+    for e in timeline:
+        if e["symbol"] == symbol:
+            return min(e.get("remaining_pct", 0), 130)
+    return 0
 
 
 def _is_in_trade(stats):
