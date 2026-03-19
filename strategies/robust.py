@@ -1,14 +1,11 @@
-"""Hold-in-Bull, Protect-in-Bear adaptive trend-following strategy.
+"""BTC strategy: EMA trend filter + adaptive vol sizing + drawdown control.
 
-Core idea:
-- Bull mode (golden cross): HOLD through corrections like B&H,
-  only emergency exit if price crashes 2% below EMA200
-- Bear mode (death cross): activate Chandelier trailing stop
-- Entry: strong trend confirmation (EMA alignment + MACD + RSI)
-- Position sizing: volatility-adjusted (risk 2.5% equity per trade)
-
-This captures nearly all upside in bull markets (matching/beating B&H),
-while limiting downside in bear markets.
+Logic:
+- Entry: price > EMA200 * (1 + entry_buffer), EMA200 not falling
+- Exit: price < EMA200 * (1 - exit_buffer) AND EMA200 is falling
+- Sizing: volatility-adaptive (low vol = bigger, high vol = smaller), scaled by leverage
+- Drawdown control: equity drops 12% from peak → reduce to 25% position
+- Recovery: equity recovers to 95% of peak → restore full position
 """
 
 from backtesting import Strategy
@@ -18,7 +15,6 @@ from core import config
 def evaluate_signals(df, symbol):
     """Evaluate current trading signal for a symbol."""
     row = df.iloc[-1]
-
     ema20 = row[f"EMA_{config.EMA_FAST}"]
     ema50 = row[f"EMA_{config.EMA_MID}"]
     ema200 = row[f"EMA_{config.EMA_SLOW}"]
@@ -32,137 +28,113 @@ def evaluate_signals(df, symbol):
 
     signals = {}
     signals["Golden Cross"] = "YES" if golden_cross else "NO"
-    signals["Strong Trend"] = "YES (EMA20>50>200 + MACD>0)" if strong_trend else "NO"
+    signals["Strong Trend"] = "YES" if strong_trend else "NO"
     signals["MACD Histogram"] = f"{macd_h:.2f}" + (" BULLISH" if macd_h > 0 else " BEARISH")
     signals["RSI"] = f"{rsi:.1f}"
     signals["ATR"] = f"${atr:,.2f}"
 
-    if golden_cross:
+    if price > ema200:
         signals["Mode"] = "BULL — hold through corrections"
-        if strong_trend and rsi < 80:
-            recommendation = "BUY"
-        else:
-            recommendation = "HOLD"
+        recommendation = "BUY" if strong_trend and rsi < 80 else "HOLD"
     else:
         signals["Mode"] = "BEAR — trailing stop active"
         signals["Chandelier SL"] = f"${price - atr * 2.5:,.2f}"
         recommendation = "SELL / CASH" if macd_h < 0 else "CAUTION"
 
     return {
-        "symbol": symbol,
-        "time": str(df.index[-1]),
-        "price": price,
-        "rsi": rsi,
-        "signals": signals,
-        "recommendation": recommendation,
-        "conditions_met": "BULL" if golden_cross else "BEAR",
+        "symbol": symbol, "time": str(df.index[-1]), "price": price, "rsi": rsi,
+        "signals": signals, "recommendation": recommendation,
+        "conditions_met": "BULL" if price > ema200 else "BEAR",
     }
 
 
 class RobustTrendStrategy(Strategy):
-    """Hold in bull, protect in bear, vol-adjusted sizing.
+    """EMA trend filter with adaptive sizing and drawdown control."""
 
-    Parameters:
-    - atr_mult: Chandelier Exit multiplier for bear-mode trailing stop
-    - risk_pct: fraction of equity risked per trade (for vol-adjusted sizing)
-    - emerg_pct: emergency exit threshold (price < EMA200 * (1 - emerg_pct))
-    """
-
-    atr_mult = 2.5
-    risk_pct = 0.025
-    emerg_pct = 0.02
+    ema_col = "EMA_200"
+    slope_bars = 3
+    exit_buffer = 0.01
+    entry_buffer = 0.005
+    max_size = 0.70
+    min_size = 0.30
+    vol_lookback = 80
+    dd_reduce = 0.12
+    reduce_size = 0.25
+    cooldown = 3
+    leverage = 1.3
 
     def init(self):
-        self.ema_fast = f"EMA_{config.EMA_FAST}"
-        self.ema_mid = f"EMA_{config.EMA_MID}"
-        self.ema_slow = f"EMA_{config.EMA_SLOW}"
-        self.macd_hist = f"MACDh_{config.MACD_FAST}_{config.MACD_SLOW}_{config.MACD_SIGNAL}"
-        self.atr_col = f"ATR_{config.ATR_PERIOD}"
-        self.rsi_col = f"RSI_{config.RSI_PERIOD}"
-
-        self.trailing_stop = 0
-        self.highest = 0
+        self.highest_equity = self.equity
+        self.reduced = False
         self.bars_since_exit = 999
         self.was_in_position = False
-        self.entry_log = []  # Record every entry for dashboard
+        self.entry_log = []
+
+    def _vol_size(self, df):
+        """Adaptive position size: smaller in high vol, bigger in low vol."""
+        if len(df) < self.vol_lookback:
+            return min(self.max_size * self.leverage, 0.99)
+        vol = df["Close"].pct_change().iloc[-self.vol_lookback:].std()
+        median_vol = 0.015
+        ratio = median_vol / max(vol, 0.005)
+        base = self.min_size + (self.max_size - self.min_size) * min(ratio, 1.5) / 1.5
+        base = min(max(base, self.min_size), self.max_size)
+        return min(round(base * self.leverage, 2), 0.99)
 
     def next(self):
-        # Detect SL/TP exit by framework (position gone without us calling close)
+        # Detect framework SL exit
         if self.was_in_position and not self.position:
             self.bars_since_exit = 0
         self.was_in_position = bool(self.position)
-
         self.bars_since_exit += 1
+
         price = self.data.Close[-1]
         df = self.data.df
-        atr = df[self.atr_col].iloc[-1]
+        ema = df[self.ema_col].iloc[-1]
 
-        ema20 = df[self.ema_fast].iloc[-1]
-        ema50 = df[self.ema_mid].iloc[-1]
-        ema200 = df[self.ema_slow].iloc[-1]
-        macd_h = df[self.macd_hist].iloc[-1]
-        rsi = df[self.rsi_col].iloc[-1]
+        if self.position:
+            if self.equity > self.highest_equity:
+                self.highest_equity = self.equity
 
-        golden_cross = ema50 > ema200
+            # Drawdown control: reduce position
+            if self.dd_reduce < 1.0:
+                dd = (self.highest_equity - self.equity) / self.highest_equity
+                if dd > self.dd_reduce and not self.reduced:
+                    cur = self.position.size * price / self.equity
+                    rs = self.reduce_size * self.leverage
+                    if cur > rs + 0.1:
+                        self.sell(size=(cur - rs) / cur)
+                        self.reduced = True
+                # Restore position when recovered
+                if self.reduced and self.equity >= self.highest_equity * 0.95:
+                    cur = self.position.size * price / self.equity
+                    add = self._vol_size(df) - cur
+                    if add > 0.05:
+                        self.buy(size=add)
+                    self.reduced = False
 
-        if self.position and self.position.is_long:
-            # Track highest price
-            if price > self.highest:
-                self.highest = price
-
-            if golden_cross:
-                # ── BULL MODE: hold through corrections ──
-                # Only exit on severe breakdown below EMA200
-                if self.emerg_pct > 0 and price < ema200 * (1 - self.emerg_pct):
-                    self.position.close()
-                    self.bars_since_exit = 0
-                    return
-            else:
-                # ── BEAR MODE: trailing stop active ──
-                chandelier = self.highest - atr * self.atr_mult
-                if chandelier > self.trailing_stop:
-                    self.trailing_stop = chandelier
-
-                if price < self.trailing_stop:
-                    self.position.close()
-                    self.bars_since_exit = 0
-                    return
-
-                # Confirmed bear: death cross + bearish momentum + price weakness
-                if macd_h < 0 and price < ema50:
-                    self.position.close()
-                    self.bars_since_exit = 0
-                    return
-
-        else:
-            # ── LOOK FOR ENTRY ──
-            if self.bars_since_exit < 2:
-                return
-
-            # Strong trend entry: full EMA alignment + MACD + RSI not overbought
-            strong_entry = (golden_cross and ema20 > ema50 > ema200
-                           and macd_h > 0 and rsi < 80)
-
-            if strong_entry:
-                sl_price = price - atr * self.atr_mult
-
-                # Volatility-adjusted position sizing
-                risk_per_unit = price - sl_price
-                if risk_per_unit > 0:
-                    dollar_risk = self.equity * self.risk_pct
-                    units = dollar_risk / risk_per_unit
-                    size = min(units * price / self.equity, 0.95)
-                    size = max(size, 0.10)
-                else:
-                    size = 0.95
-
-                self.trailing_stop = sl_price
-                self.highest = price
-                self.buy(sl=sl_price, size=size)
-                self.bars_since_exit = 0
+            # Exit: price below EMA and EMA itself is falling
+            below = price < ema * (1 - self.exit_buffer)
+            ema_prev = df[self.ema_col].iloc[-self.slope_bars] if len(df) > self.slope_bars else ema
+            if below and ema < ema_prev:
+                sl_at_exit = ema * (1 - self.exit_buffer)
+                self.position.close()
+                self.reduced = False
                 self.entry_log.append({
-                    "time": self.data.index[-1],
-                    "price": price,
-                    "sl": sl_price,
-                    "size": size,
+                    "time": self.data.index[-1], "price": price,
+                    "sl": sl_at_exit, "size": 0, "action": "close",
+                })
+                return
+        else:
+            # Entry: price above EMA
+            if self.bars_since_exit < self.cooldown:
+                return
+            if price > ema * (1 + self.entry_buffer):
+                size = self._vol_size(df)
+                self.buy(size=size)
+                self.highest_equity = self.equity
+                self.reduced = False
+                self.entry_log.append({
+                    "time": self.data.index[-1], "price": price,
+                    "sl": ema * (1 - self.exit_buffer), "size": size,
                 })

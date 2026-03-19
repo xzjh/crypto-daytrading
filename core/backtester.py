@@ -24,9 +24,10 @@ def run_backtest(df, symbol: str, plot: bool = False, **strategy_params) -> dict
     bt = Backtest(
         df, strategy_cls,
         cash=config.BACKTEST_CASH,
-        commission=config.BACKTEST_COMMISSION,
-        exclusive_orders=True,
+        commission=0.0018,  # 0.15% fee + 0.03% leverage cost
+        exclusive_orders=False,
         trade_on_close=True,
+        margin=1/1.3,
     )
     stats = bt.run(**strategy_params)
 
@@ -71,7 +72,7 @@ def run_period_comparison(df, symbol: str, candles_per_quarter=540):
             bt = Backtest(
                 df_period, strategy_cls,
                 cash=config.BACKTEST_CASH,
-                commission=config.BACKTEST_COMMISSION,
+                commission=0.0018,  # 0.15% fee + 0.03% leverage cost
                 exclusive_orders=True, trade_on_close=True,
             )
             stats = bt.run()
