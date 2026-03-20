@@ -55,7 +55,7 @@ class RobustTrendStrategy(Strategy):
     slope_bars = 3
     exit_buffer = 0.01
     entry_buffer = 0.005
-    max_size = 0.70
+    max_size = 1.0
     min_size = 0.30
     vol_lookback = 80
     dd_reduce = 0.12
@@ -72,14 +72,15 @@ class RobustTrendStrategy(Strategy):
 
     def _vol_size(self, df):
         """Adaptive position size: smaller in high vol, bigger in low vol."""
+        cap = 0.99  # Framework requires size < 1; margin handles leverage
         if len(df) < self.vol_lookback:
-            return min(self.max_size * self.leverage, 0.99)
+            return cap
         vol = df["Close"].pct_change().iloc[-self.vol_lookback:].std()
         median_vol = 0.015
         ratio = median_vol / max(vol, 0.005)
         base = self.min_size + (self.max_size - self.min_size) * min(ratio, 1.5) / 1.5
         base = min(max(base, self.min_size), self.max_size)
-        return min(round(base * self.leverage, 2), 0.99)
+        return min(round(base, 2), cap)
 
     def next(self):
         cur_bar = len(self.data) - 1
@@ -115,7 +116,7 @@ class RobustTrendStrategy(Strategy):
                 dd = (self.highest_equity - self.equity) / self.highest_equity
                 if dd > self.dd_reduce and not self.reduced:
                     cur = self.position.size * price / self.equity
-                    rs = self.reduce_size * self.leverage
+                    rs = self.reduce_size
                     if cur > rs + 0.1:
                         self.sell(size=(cur - rs) / cur)
                         self.reduced = True

@@ -21,13 +21,14 @@ def _get_strategy(symbol):
 def run_backtest(df, symbol: str, plot: bool = False, **strategy_params) -> dict:
     """Run backtest on prepared DataFrame."""
     strategy_cls = _get_strategy(symbol)
+    use_margin = "ETH" not in symbol
     bt = Backtest(
         df, strategy_cls,
         cash=config.BACKTEST_CASH,
-        commission=0.0018,  # 0.15% fee + 0.03% leverage cost
+        commission=0.0018 if use_margin else 0.0015,
         exclusive_orders=False,
         trade_on_close=True,
-        margin=1/1.3,
+        **({"margin": 1/1.3} if use_margin else {}),
     )
     stats = bt.run(**strategy_params)
 

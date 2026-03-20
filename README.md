@@ -1,78 +1,81 @@
-# Crypto Day Trading Signal System
+# Crypto Trading System
 
-Adaptive trend-following system for BTC/USDT and ETH/USDT with portfolio rotation. Outputs BUY/SELL/HOLD signals based on multi-indicator technical analysis, with full backtesting and walk-forward validation.
+Adaptive trend-following system for BTC/USDT and ETH/USDT. Outputs BUY/SELL/HOLD signals based on EMA trend filters with adaptive position sizing, drawdown control, and leveraged collateral management.
 
-## Strategies
-
-The system runs three layers:
-
-### Layer 1: Asset-Specific Trend Following
+## Strategy
 
 **Core logic: hold in bull markets, protect in bear markets.**
 
-BTC and ETH use different parameters tuned to their market characteristics:
+Both BTC and ETH use the same framework — EMA trend filter + volatility-adaptive sizing + drawdown control — with different parameters tuned to each asset's characteristics.
 
-| | BTC Strategy | ETH Strategy |
+### Entry / Exit Rules
+
+- **Entry**: Price > EMA × (1 + entry_buffer), EMA slope positive → BUY
+- **Exit**: Price < EMA × (1 − exit_buffer), EMA slope negative → CLOSE
+- **Cooldown**: 3 bars (12h) after exit before re-entry
+- **Drawdown control**: Equity drops 12% from peak → reduce to 25% position. Recovery to 95% of peak → restore full position.
+
+### Parameters
+
+| | BTC | ETH |
 |---|---|---|
-| EMAs | 20/50/200 (standard) | 15/40/100 (shorter, faster ETH cycles) |
-| Trailing Stop | Chandelier Exit ATR × 2.5 | Chandelier Exit ATR × 2.0 (tighter) |
-| Position Sizing | 2.5% equity risk/trade | 1.2% equity risk/trade (more conservative) |
-| Bull Mode | Hold through corrections | Hold through corrections |
-| Bear Mode | Trailing stop + death cross exit | Trailing stop + death cross exit |
+| Trend Filter | EMA 200 | EMA 150 (shorter ETH cycles) |
+| Entry Buffer | 0.5% | 0.5% |
+| Exit Buffer | 1.0% | 1.5% (wider for ETH volatility) |
+| Slope Check | 3 bars | 5 bars |
+| Max Size | 100% | 100% |
+| Min Size | 30% | 30% |
+| Leverage | **1.3x** (collateral loan) | **1.0x** (no leverage) |
+| Position Sizing | Volatility-adaptive: low vol → bigger, high vol → smaller |
 
-### Layer 2: Portfolio Rotation
+### Leverage Model
 
-Dynamically allocates between BTC and ETH strategies based on momentum:
+BTC uses 1.3x leverage via collateral borrowing: buy with full cash → pledge assets → borrow cash → buy more. This is NOT futures/margin trading — it's spot + lending. ETH runs at 1.0x (no leverage) for lower drawdown.
 
-- Every 30 bars (~5 days): compare 120-bar (~20 day) momentum of each strategy's equity curve
-- Overweight the stronger performer: 70% to winner, 30% to the other
-- Transaction cost of 0.1% per rebalance included
+## Backtest Results: 6.5 Years (2019.10 – 2026.03)
 
-This captures the **BTC/ETH rotation effect** — market capital alternates between BTC (institutional/safe-haven flows) and ETH (ecosystem/altcoin season), and 20-day momentum reliably identifies which regime we're in.
+### Summary
 
-### Layer 3: ML Regime Classifier (Experimental)
-
-LightGBM model trained walk-forward to classify bull/bear regimes. Combined with trend following as a hybrid signal. Currently underperforms pure trend following — included for research, not production use.
-
-## Results: 6.5-Year Backtest (2019.10 – 2026.03)
-
-| Strategy | Return | Sharpe | Max Drawdown |
-|---|---|---|---|
-| BTC Buy & Hold | +703% | — | ~-50% |
-| ETH Buy & Hold | +1102% | — | ~-65% |
-| BTC Trend Following | +666% | 0.96 | -25% |
-| ETH Trend Following | +439% | 1.10 | -16% |
-| **Portfolio Rotation** | **+823%** | **1.60** | **-21%** |
-
-### Portfolio Rotation: Walk-Forward Validation
-
-12 half-year windows tested, **all 12 produced positive alpha** vs equal-weight:
-
-| Period | Rotation | Equal Weight | Alpha |
-|---|---|---|---|
-| 2019.10 – 2020.04 | +35.6% | +24.0% | **+11.5%** |
-| 2020.04 – 2020.10 | +45.7% | +35.1% | **+10.6%** |
-| 2020.10 – 2021.04 | +50.5% | +35.4% | **+15.1%** |
-| 2021.04 – 2021.10 | +21.4% | +15.3% | **+6.1%** |
-| 2021.10 – 2022.04 | +0.1% | -2.9% | **+3.0%** |
-| 2022.04 – 2022.10 | +3.0% | +0.9% | **+2.1%** |
-| 2022.10 – 2023.04 | +22.8% | +17.7% | **+5.1%** |
-| 2023.04 – 2023.10 | -0.7% | -3.3% | **+2.6%** |
-| 2023.10 – 2024.04 | +98.4% | +82.0% | **+16.4%** |
-| 2024.04 – 2024.09 | +2.3% | -2.0% | **+4.3%** |
-| 2024.09 – 2025.03 | +29.3% | +15.4% | **+13.9%** |
-| 2025.03 – 2025.09 | +28.2% | +19.5% | **+8.7%** |
-
-**Mean alpha: +8.3% per half-year. 100% hit rate across all market conditions.**
-
-### Performance by Market Regime (Trend Following)
-
-| Regime | BTC Alpha (vs B&H) | ETH Alpha (vs B&H) |
+| | BTC (1.3x) | ETH (1.0x) |
 |---|---|---|
-| Bull quarters | -32%/quarter (trails B&H) | -41%/quarter (trails B&H) |
-| **Bear quarters** | **+21%/quarter** | **+29%/quarter** |
+| **Total Return** | **+2,878%** | **+5,381%** |
+| **Buy & Hold** | +662% | +1,134% |
+| **Alpha** | **+2,216%** | **+4,247%** |
+| **Sharpe Ratio** | 0.88 | 0.83 |
+| **Max Drawdown** | -32.4% | -37.1% |
+| **Trades** | 95 | 123 |
 
-The trend following strategies' edge is downside protection. The portfolio rotation layer then adds alpha on top by correctly identifying which asset to overweight.
+### Yearly Breakdown — BTC (1.3x leverage)
+
+| Year | Strategy | B&H | Alpha | Sharpe | MaxDD |
+|------|----------|-----|-------|--------|-------|
+| 2019 | -15.3% | -21.7% | +6.4% | -2.94 | -23.0% |
+| 2020 | +339.6% | +299.8% | +39.9% | 3.04 | -26.8% |
+| 2021 | +105.2% | +57.8% | +47.3% | 1.55 | -30.1% |
+| 2022 | -22.7% | -64.7% | +42.0% | -0.78 | -28.4% |
+| 2023 | +169.5% | +155.8% | +13.7% | 2.49 | -20.6% |
+| 2024 | +108.8% | +120.9% | -12.2% | 1.83 | -28.8% |
+| 2025 | -1.3% | -6.4% | +5.1% | 0.10 | -24.6% |
+| 2026 | -10.6% | -20.4% | +9.7% | -2.09 | -18.3% |
+
+### Yearly Breakdown — ETH (1.0x no leverage)
+
+| Year | Strategy | B&H | Alpha | Sharpe | MaxDD |
+|------|----------|-----|-------|--------|-------|
+| 2019 | -3.9% | -25.3% | +21.4% | -0.76 | -9.7% |
+| 2020 | +411.0% | +465.6% | -54.6% | 2.93 | -31.5% |
+| 2021 | +268.6% | +393.3% | -124.7% | 2.19 | -35.7% |
+| 2022 | +5.3% | -67.9% | +73.2% | 0.32 | -25.3% |
+| 2023 | +50.6% | +91.0% | -40.3% | 1.23 | -29.8% |
+| 2024 | +42.5% | +46.5% | -4.0% | 1.03 | -37.1% |
+| 2025 | +38.4% | -11.4% | +49.8% | 1.00 | -30.2% |
+| 2026 | -4.0% | -28.4% | +24.3% | -0.54 | -16.4% |
+
+### Key Observations
+
+- **Bear market protection**: Both strategies generate strong alpha in bear markets (2022: BTC +42%, ETH +73% vs B&H)
+- **Bull market capture**: Holds through corrections, captures most of the upside (2020: BTC +340%, ETH +411%)
+- **ETH trails B&H in bull years**: The 1.0x position can't match buy-and-hold during explosive ETH rallies, but dramatically outperforms in downturns
 
 ## Usage
 
@@ -82,75 +85,56 @@ The trend following strategies' edge is downside protection. The portfolio rotat
 python3 main.py signal
 ```
 
-Outputs individual BTC/ETH signals plus portfolio rotation recommendation:
-
-```
-BTC/USDT | Signal: HOLD (Bull mode — hold through corrections)
-ETH/USDT | Signal: BUY  (Strong trend: EMA15>40>100 + MACD>0)
-
-PORTFOLIO ROTATION SIGNAL
-  BTC 20d momentum:  +8.5%
-  ETH 20d momentum:  +12.7%
-  Recommended:       BTC 30% / ETH 70%
-```
-
 ### Run Backtest
 
 ```bash
-# Default: 3 years
-python3 main.py backtest
-
-# Full history (~6.5 years)
-python3 main.py backtest --days 2400
-
-# Single asset
-python3 main.py backtest --days 2400 --symbols BTC/USDT
-
-# With interactive chart
-python3 main.py backtest --plot
-```
-
-### Advanced Tools
-
-```bash
-python3 analysis/optimizer.py        # Multi-round parameter optimization
-python3 analysis/walk_forward.py     # Walk-forward overfitting validation
-python3 analysis/run_comparison.py   # 4-strategy comparison (TF, ML, Rotation, B&H)
+python3 main.py backtest                          # Default: 3 years
+python3 main.py backtest --days 2400              # Full history
+python3 main.py backtest --days 2400 --symbols BTC/USDT   # Single asset
+python3 main.py backtest --plot                   # With chart
 ```
 
 ### Dashboard
 
 ```bash
-python3 web/server.py    # Start at http://localhost:8050
+python3 web/server.py    # http://localhost:8050
 ```
+
+Features: K-line charts (4H/1D/1W/1M), equity curves with trade markers, trade history with position tracking, yearly performance breakdown.
+
+### Tests
+
+```bash
+python3 -m unittest discover -s tests -p "test_*.py"   # 116 tests
+```
+
+Pre-commit and pre-push hooks run tests automatically. Setup: `git config core.hooksPath .githooks`
 
 ## Project Structure
 
 ```
 ├── main.py                      # CLI: signal & backtest commands
-├── strategies/                  # Trading strategies
-│   ├── robust.py                # BTC: hold-in-bull, protect-in-bear
-│   ├── eth.py                   # ETH: shorter EMAs, tighter stops
-│   ├── portfolio.py             # Portfolio rotation (BTC/ETH momentum)
+├── strategies/
+│   ├── robust.py                # BTC: EMA200 trend + 1.3x leverage
+│   ├── eth.py                   # ETH: EMA150 trend + no leverage
+│   ├── portfolio.py             # Portfolio rotation (unused)
 │   ├── ml.py                    # ML regime classifier (experimental)
 │   ├── enhanced.py              # External data integration (experimental)
-│   └── legacy.py                # Legacy: multi-indicator confluence
-├── core/                        # Core modules
+│   └── legacy.py                # Legacy multi-indicator strategy
+├── core/
 │   ├── config.py                # Tunable parameters
 │   ├── data_fetcher.py          # OHLCV via ccxt (Binance, CSV cache)
 │   ├── indicators.py            # Technical indicators (EMA, RSI, MACD, BB, ATR)
-│   ├── backtester.py            # Backtesting engine with quarterly breakdown
+│   ├── backtester.py            # Backtesting engine
 │   └── external_data.py         # Fear & Greed Index, Funding Rates
-├── analysis/                    # Analysis & validation tools
-│   ├── optimizer.py             # Parameter grid search
-│   ├── walk_forward.py          # Walk-forward overfitting validation
-│   ├── run_comparison.py        # 4-strategy comparison runner
-│   ├── ml_features.py           # Feature engineering for ML
-│   └── portfolio.py             # Portfolio combination utilities
-├── web/                         # Dashboard frontend
-│   ├── server.py                # FastAPI backend + data refresh
+├── tests/
+│   ├── test_data_rules.py       # Backend data rules + sentry invariants
+│   └── test_frontend_rules.py   # Frontend data consistency tests
+├── web/
+│   ├── server.py                # FastAPI backend
 │   ├── trades.py                # Trade timeline builder
-│   └── static/index.html        # Plotly.js interactive dashboard
+│   └── static/index.html        # Plotly.js dashboard
+├── .githooks/                   # Pre-commit/pre-push test hooks
 └── requirements.txt
 ```
 
@@ -158,18 +142,5 @@ python3 web/server.py    # Start at http://localhost:8050
 
 ```bash
 pip install -r requirements.txt
+git config core.hooksPath .githooks   # Enable test hooks
 ```
-
-Dependencies: `ccxt`, `pandas`, `ta`, `backtesting`, `matplotlib`, `numpy`, `scikit-learn`, `lightgbm`
-
-## Design Decisions
-
-1. **Asset-specific strategies**: BTC and ETH have different volatility and trend cycle lengths. Separate parameters avoid compromising on either.
-
-2. **Hold-through in bull markets**: Rather than trading in/out during uptrends, hold through corrections and only activate trailing stops on trend breaks. Captures nearly all bull upside.
-
-3. **Portfolio rotation adds consistent alpha**: The BTC/ETH momentum rotation produced positive alpha in every single walk-forward window across 6.5 years — the most robust signal in the entire system.
-
-4. **ML underperforms on crypto**: LightGBM with technical features could not beat simple trend following. Crypto's regime-switching nature and fat-tailed distributions make it hard for tree-based models to find stable patterns.
-
-5. **Volatility-adjusted sizing**: Position size scales inversely with ATR, automatically reducing exposure during volatile periods. This improves Sharpe ratio by lowering portfolio volatility.

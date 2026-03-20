@@ -43,8 +43,8 @@ def compute_data():
                          commission=0.0018, exclusive_orders=False,
                          trade_on_close=True, margin=1/1.3).run()
     eth_stats = Backtest(eth_df, ETHTrendStrategy, cash=config.BACKTEST_CASH,
-                         commission=0.0018, exclusive_orders=False,
-                         trade_on_close=True, margin=1/1.3).run()
+                         commission=0.0015, exclusive_orders=False,
+                         trade_on_close=True).run()
 
     btc_equity = btc_stats["_equity_curve"]["Equity"]
     eth_equity = eth_stats["_equity_curve"]["Equity"]

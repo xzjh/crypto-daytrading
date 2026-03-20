@@ -76,13 +76,13 @@ class ETHTrendStrategy(Strategy):
     slope_bars = 5
     exit_buffer = 0.015
     entry_buffer = 0.005
-    max_size = 0.50
-    min_size = 0.20
+    max_size = 1.0
+    min_size = 0.30
     vol_lookback = 80
     dd_reduce = 0.12
-    reduce_size = 0.20
+    reduce_size = 0.25
     cooldown = 3
-    leverage = 1.3
+    leverage = 1.0
 
     def init(self):
         self.highest_equity = self.equity
@@ -92,14 +92,15 @@ class ETHTrendStrategy(Strategy):
         self.entry_log = []
 
     def _vol_size(self, df):
+        cap = 0.99  # Framework requires size < 1
         if len(df) < self.vol_lookback:
-            return min(self.max_size * self.leverage, 0.99)
+            return cap
         vol = df["Close"].pct_change().iloc[-self.vol_lookback:].std()
         median_vol = 0.02  # ETH is more volatile
         ratio = median_vol / max(vol, 0.005)
         base = self.min_size + (self.max_size - self.min_size) * min(ratio, 1.5) / 1.5
         base = min(max(base, self.min_size), self.max_size)
-        return min(round(base * self.leverage, 2), 0.99)
+        return min(round(base, 2), cap)
 
     def next(self):
         cur_bar = len(self.data) - 1
@@ -133,7 +134,7 @@ class ETHTrendStrategy(Strategy):
                 dd = (self.highest_equity - self.equity) / self.highest_equity
                 if dd > self.dd_reduce and not self.reduced:
                     cur = self.position.size * price / self.equity
-                    rs = self.reduce_size * self.leverage
+                    rs = self.reduce_size
                     if cur > rs + 0.1:
                         self.sell(size=(cur - rs) / cur)
                         self.reduced = True
