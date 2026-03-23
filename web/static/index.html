@@ -21,7 +21,7 @@
     --toggle-bg: #ccc;
   }
   * { margin:0; padding:0; box-sizing:border-box; }
-  body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; background:var(--bg); color:var(--text); transition:background .3s,color .3s; }
+  body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; background:var(--bg); color:var(--text); transition:background .3s,color .3s; overflow-x:hidden; }
   .header { padding:14px 24px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; }
   .header h1 { font-size:20px; font-weight:600; }
   .header-right { display:flex; align-items:center; gap:14px; }
@@ -34,7 +34,7 @@
   .range-btn { padding:4px 12px; border-radius:6px; border:none; cursor:pointer; font-size:12px; font-weight:600; background:var(--btn-bg); color:var(--btn-text); transition:all .2s; }
   .range-btn.active { background:var(--btn-active); color:var(--btn-active-text); }
   .grid { display:grid; grid-template-columns:1fr; gap:16px; padding:16px 24px; }
-  .card { background:var(--card); border-radius:12px; border:1px solid var(--border); padding:16px; transition:background .3s,border-color .3s; }
+  .card { background:var(--card); border-radius:12px; border:1px solid var(--border); padding:16px; transition:background .3s,border-color .3s; overflow:hidden; }
   .card-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; flex-wrap:wrap; gap:8px; }
   .card-title { font-size:14px; color:var(--muted); text-transform:uppercase; letter-spacing:.5px; }
   .stats-row { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:12px; }
@@ -52,14 +52,15 @@
   .trades-table th { text-align:left; color:var(--muted); font-weight:500; font-size:11px; text-transform:uppercase; }
   .trades-table tbody tr { transition:background .15s; }
   .trades-table tbody tr:hover { background:var(--card-inner); }
-  .trades-scroll { max-height:550px; overflow-y:auto; }
+  .trades-scroll { max-height:550px; overflow-y:auto; overflow-x:auto; }
   .trade-type { display:inline-block; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:600; min-width:36px; text-align:center; }
   .trade-buy { background:rgba(0,200,83,.15); color:var(--green); }
   .trade-sell { background:rgba(255,23,68,.15); color:var(--red); }
   .trade-asset { font-weight:600; }
   .trade-asset-btc { color:var(--orange); }
   .trade-asset-eth { color:var(--purple); }
-  .chart { width:100%; }
+  .chart { width:100%; overflow:hidden; }
+  .perf-scroll { overflow-x:auto; }
 
   /* Tabs */
   .tabs { display:flex; gap:0; border-bottom:2px solid var(--border); margin-bottom:16px; }
@@ -73,12 +74,27 @@
 
   @media (max-width:768px) {
     .grid { padding:8px; gap:8px; }
-    .header { padding:12px 16px; }
-    .header h1 { font-size:16px; }
-    .stats-row { grid-template-columns:repeat(2,1fr); }
-    .stat-value { font-size:16px; }
-    .card { padding:12px; }
-    .tab { padding:8px 16px; font-size:13px; }
+    .header { padding:10px 12px; }
+    .header h1 { font-size:15px; }
+    .header-right { gap:8px; }
+    .header .update { font-size:10px; max-width:160px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .stats-row { grid-template-columns:repeat(2,1fr); gap:8px; }
+    .stat { padding:8px; }
+    .stat-value { font-size:15px; }
+    .stat-label { font-size:10px; }
+    .stat-sub { font-size:10px; }
+    .card { padding:10px; }
+    .card-header { flex-direction:column; align-items:flex-start; gap:6px; }
+    .card-title { font-size:12px; }
+    .tab { padding:8px 14px; font-size:13px; }
+    .range-btn { padding:3px 8px; font-size:11px; }
+    .trades-table { font-size:11px; }
+    .trades-table th,.trades-table td { padding:6px 4px; }
+    .trades-scroll { max-height:400px; overflow-x:auto; -webkit-overflow-scrolling:touch; }
+    .trades-scroll table { min-width:520px; }
+    .perf-scroll { -webkit-overflow-scrolling:touch; }
+    .perf-scroll table { min-width:480px; }
+    .tabs-wrapper { padding:12px 8px 0 !important; }
   }
 </style>
 </head>
@@ -93,7 +109,7 @@
 </div>
 
 <!-- Asset Tabs -->
-<div style="padding:16px 24px 0">
+<div class="tabs-wrapper" style="padding:16px 24px 0">
   <div class="tabs" id="mainTabs">
     <div class="tab active" data-tab="btc" style="border-bottom-color:var(--orange)">BTC/USDT</div>
     <div class="tab" data-tab="eth">ETH/USDT</div>
@@ -104,7 +120,7 @@
 <div class="tab-content active" id="tab-btc">
   <div class="grid">
     <div class="card"><div class="card-title">BTC Current Status</div><div class="stats-row" id="btcStatus"></div></div>
-    <div class="card"><div class="card-title">BTC Performance</div><div id="btcPerfTable" style="margin-top:8px"></div></div>
+    <div class="card"><div class="card-title">BTC Performance</div><div class="perf-scroll" style="margin-top:8px"><div id="btcPerfTable"></div></div></div>
     <div class="card">
       <div class="card-header"><span class="card-title">BTC/USDT Price & Trade Signals</span>
         <div class="range-bar" data-tf="btc"><button class="range-btn" data-tf="4h">4H</button><button class="range-btn active" data-tf="1d">1D</button><button class="range-btn" data-tf="1w">1W</button><button class="range-btn" data-tf="1m">1M</button></div>
@@ -127,7 +143,7 @@
 <div class="tab-content" id="tab-eth">
   <div class="grid">
     <div class="card"><div class="card-title">ETH Current Status</div><div class="stats-row" id="ethStatus"></div></div>
-    <div class="card"><div class="card-title">ETH Performance</div><div id="ethPerfTable" style="margin-top:8px"></div></div>
+    <div class="card"><div class="card-title">ETH Performance</div><div class="perf-scroll" style="margin-top:8px"><div id="ethPerfTable"></div></div></div>
     <div class="card">
       <div class="card-header"><span class="card-title">ETH/USDT Price & Trade Signals</span>
         <div class="range-bar" data-tf="eth"><button class="range-btn" data-tf="4h">4H</button><button class="range-btn active" data-tf="1d">1D</button><button class="range-btn" data-tf="1w">1W</button><button class="range-btn" data-tf="1m">1M</button></div>
@@ -176,7 +192,8 @@ document.getElementById('mainTabs').addEventListener('click', function(e) {
 
 /* Chart helpers */
 function chartColors() { var d = getTheme() === 'dark'; return { paper: d?'#1a1d28':'#fff', plot: d?'#1a1d28':'#fff', font: d?'#e0e0e0':'#333', grid: d?'#2a2d3a':'#e8e8e8', up: d?'#00c853':'#00a844', down: d?'#ff1744':'#d50000' }; }
-function baseLayout() { var c = chartColors(); return { paper_bgcolor:c.paper, plot_bgcolor:c.plot, font:{color:c.font,size:12}, margin:{l:55,r:20,t:10,b:40}, xaxis:{gridcolor:c.grid,type:'date',hoverformat:'%Y-%m-%d %H:%M '+_tz}, yaxis:{gridcolor:c.grid}, legend:{orientation:'h',y:1.08,x:.5,xanchor:'center',font:{size:11}}, hovermode:'x unified' }; }
+function isMobile() { return window.innerWidth <= 768; }
+function baseLayout() { var c = chartColors(); var m = isMobile(); return { paper_bgcolor:c.paper, plot_bgcolor:c.plot, font:{color:c.font,size:m?10:12}, margin:{l:m?40:55,r:m?10:20,t:10,b:m?30:40}, xaxis:{gridcolor:c.grid,type:'date',hoverformat:'%Y-%m-%d %H:%M '+_tz}, yaxis:{gridcolor:c.grid}, legend:{orientation:'h',y:1.08,x:.5,xanchor:'center',font:{size:m?9:11}}, hovermode:'x unified' }; }
 var CCFG = { responsive: true, displayModeBar: false };
 function msToDate(ms) { return new Date(ms); }
 function msToDates(a) { return a.map(msToDate); }
@@ -304,7 +321,7 @@ function renderPriceChart(divId, ohlcTF, emaTF, trades, emaLabels, tf, events) {
     return {x: candleX(e.time), yBuy: ohlc.l[ci]*0.993, ySell: ohlc.h[ci]*1.007};
   }, {size: 13});
   var xStart=t.length>visibleCandles?t[startIdx]:t[0], xEnd=t[t.length-1];
-  var ly=Object.assign({},baseLayout(),{height:450,hovermode:'closest',yaxis:Object.assign({},baseLayout().yaxis,{title:'Price (USD)',range:[visLow-yPad,visHigh+yPad]}),xaxis:Object.assign({},baseLayout().xaxis,{rangeslider:{visible:false},range:[xStart,xEnd]})});
+  var ly=Object.assign({},baseLayout(),{height:isMobile()?300:450,hovermode:'closest',yaxis:Object.assign({},baseLayout().yaxis,{title:isMobile()?'':'Price (USD)',range:[visLow-yPad,visHigh+yPad]}),xaxis:Object.assign({},baseLayout().xaxis,{rangeslider:{visible:false},range:[xStart,xEnd]})});
   Plotly.newPlot(divId,[candle].concat(emaT,markers),ly,CCFG);
   document.getElementById(divId).on('plotly_relayout',function(ed){if(!ed||(!ed['xaxis.range[0]']&&!ed['xaxis.range']))return;var xMin,xMax;if(ed['xaxis.range[0]']){xMin=new Date(ed['xaxis.range[0]']).getTime();xMax=new Date(ed['xaxis.range[1]']).getTime();}else if(ed['xaxis.range']){xMin=new Date(ed['xaxis.range'][0]).getTime();xMax=new Date(ed['xaxis.range'][1]).getTime();}else return;var lo=Infinity,hi=-Infinity;for(var yi=0;yi<ohlc.t.length;yi++){if(ohlc.t[yi]>=xMin&&ohlc.t[yi]<=xMax){if(ohlc.l[yi]<lo)lo=ohlc.l[yi];if(ohlc.h[yi]>hi)hi=ohlc.h[yi];}}if(lo<Infinity){var pad=(hi-lo)*0.08;Plotly.relayout(divId,{'yaxis.range':[lo-pad,hi+pad]});}});
 }
@@ -336,7 +353,7 @@ function renderEquityChart(divId, eq, bhKey, rangeDays, color, label, events) {
     for(var i=0;i<eq.t.length;i++){var d=Math.abs(eq.t[i]-e.time);if(d<bd){bd=d;idx=i;}}
     return {x: msToDate(eq.t[idx]), yBuy: y - offset, ySell: y + offset};
   }, {size: 11, tMin: tMin, tMax: tMax});
-  Plotly.newPlot(divId,traces.concat(markers),Object.assign({},baseLayout(),{height:300,hovermode:'closest',yaxis:Object.assign({},baseLayout().yaxis,{title:'Value (base=100)'})}),CCFG);
+  Plotly.newPlot(divId,traces.concat(markers),Object.assign({},baseLayout(),{height:isMobile()?220:300,hovermode:'closest',yaxis:Object.assign({},baseLayout().yaxis,{title:isMobile()?'':'Value (base=100)'})}),CCFG);
 }
 
 /* Trade history */
@@ -363,7 +380,7 @@ function renderTrades(divId, events, filterMode) {
     var mark100 = 100 / barMax * 100;
     var fillColor = displayPct > 100 ? 'var(--orange)' : displayPct > 0 ? 'var(--green)' : 'var(--card-inner)';
     var posBar = '<div style="display:flex;align-items:center;gap:6px">'
-      + '<div style="width:120px;height:14px;background:var(--card-inner);border-radius:3px;position:relative">'
+      + '<div style="width:'+(isMobile()?'80':'120')+'px;height:14px;background:var(--card-inner);border-radius:3px;position:relative">'
       + '<div style="width:'+barFill+'%;height:100%;background:'+fillColor+';border-radius:3px;opacity:0.7"></div>'
       + '<div style="position:absolute;left:'+mark100+'%;top:0;width:1px;height:100%;background:var(--muted);opacity:0.5"></div>'
       + '</div>'
