@@ -278,14 +278,21 @@ def _add_open_positions(trades_list, stats, symbol, df, strategy_instance):
     now_ms = int(df.index[-1].timestamp() * 1000)
 
     sl_price = None
+    position_size = 0
     if strategy_instance and hasattr(strategy_instance, "entry_log") and strategy_instance.entry_log:
         last_entry = strategy_instance.entry_log[-1]
         sl_price = round(last_entry["sl"], 2)
         entry_price = round(last_entry["price"], 2)
+        position_size = last_entry.get("size", 0)
 
     price_change_pct = (current_price - entry_price) / entry_price if entry_price > 0 else 0
+
     equity_change = eq_final - flat_value
-    estimated_value = abs(equity_change / price_change_pct) if abs(price_change_pct) > 0.001 else 0
+    # Use strategy's position size (fraction of equity) for stable estimation
+    if position_size > 0:
+        estimated_value = position_size * flat_value
+    else:
+        estimated_value = abs(equity_change / price_change_pct) if abs(price_change_pct) > 0.001 else 0
 
     trades_list.append({
         "entry_time": entry_ms,
