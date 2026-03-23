@@ -19,6 +19,7 @@ from strategies.eth import add_eth_indicators
 from strategies.robust import RobustTrendStrategy
 from strategies.eth import ETHTrendStrategy
 from web.trades import build_timeline
+from web.notify import notify_trade
 
 warnings.filterwarnings("ignore")
 
@@ -28,6 +29,7 @@ app.mount("/static", StaticFiles(directory="web/static"), name="static")
 DATA = {}
 LOCK = threading.Lock()
 REFRESH_INTERVAL = 1800  # 30 min
+_LAST_TRADE_TIMES = {}  # symbol -> latest trade time (for new trade detection)
 
 
 def compute_data():
@@ -103,6 +105,21 @@ def compute_data():
 
     # Build unified timeline
     timeline = build_timeline(btc_trades, eth_trades, btc_equity, eth_equity)
+
+    # Notify new trades (compare with last known trade time per symbol)
+    global _LAST_TRADE_TIMES
+    for sym in ["BTC", "ETH"]:
+        sym_events = [e for e in timeline if e["symbol"] == sym]
+        if not sym_events:
+            continue
+        latest = sym_events[0]  # timeline is sorted descending
+        prev_time = _LAST_TRADE_TIMES.get(sym, 0)
+        if prev_time > 0 and latest["time"] > prev_time:
+            # New trade detected — notify
+            new_events = [e for e in sym_events if e["time"] > prev_time]
+            for e in reversed(new_events):  # chronological order
+                notify_trade(e)
+        _LAST_TRADE_TIMES[sym] = latest["time"]
 
     # Equity curves (normalized to 100)
     eq_dates = ts(btc_equity.index)
