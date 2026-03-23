@@ -440,12 +440,24 @@ async function loadData() {
   try {
     var res = await fetch('/api/data');
     DATA = await res.json();
-    document.getElementById('lastUpdate').textContent = 'Last update: ' + fmtDateTime(new Date(DATA.last_update).getTime());
+    window._lastUpdateTime = new Date(DATA.last_update);
+    updateTimeAgo();
     renderAll();
   } catch (e) { console.error('Load failed:', e); }
 }
+function updateTimeAgo() {
+  if (!window._lastUpdateTime) return;
+  var diff = Math.floor((Date.now() - window._lastUpdateTime.getTime()) / 1000);
+  var txt;
+  if (diff < 60) txt = 'just now';
+  else if (diff < 3600) txt = Math.floor(diff / 60) + 'm ago';
+  else if (diff < 86400) txt = Math.floor(diff / 3600) + 'h ' + Math.floor((diff % 3600) / 60) + 'm ago';
+  else txt = Math.floor(diff / 86400) + 'd ago';
+  document.getElementById('lastUpdate').textContent = 'Updated ' + txt + ' · ' + fmtDateTime(window._lastUpdateTime.getTime());
+}
 loadData();
 setInterval(loadData, 30 * 60 * 1000);
+setInterval(updateTimeAgo, 30000);
 </script>
 </body>
 </html>
