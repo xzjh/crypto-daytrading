@@ -180,8 +180,9 @@ function baseLayout() { var c = chartColors(); return { paper_bgcolor:c.paper, p
 var CCFG = { responsive: true, displayModeBar: false };
 function msToDate(ms) { return new Date(ms); }
 function msToDates(a) { return a.map(msToDate); }
-function fmtDate(ms) { var d=new Date(ms); return d.getUTCFullYear()+'-'+String(d.getUTCMonth()+1).padStart(2,'0')+'-'+String(d.getUTCDate()).padStart(2,'0'); }
-function fmtDateTime(ms) { var d=new Date(ms); return fmtDate(ms)+' '+String(d.getUTCHours()).padStart(2,'0')+':'+String(d.getUTCMinutes()).padStart(2,'0'); }
+var _tz = (function(){ var o=new Date().getTimezoneOffset(), h=Math.abs(Math.floor(o/60)), m=Math.abs(o%60); return 'UTC'+(o<=0?'+':'-')+h+(m?':'+String(m).padStart(2,'0'):''); })();
+function fmtDate(ms) { var d=new Date(ms); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function fmtDateTime(ms) { var d=new Date(ms); return fmtDate(ms)+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')+' '+_tz; }
 function fmtMoney(v) { return v >= 1000 ? '$' + v.toLocaleString(undefined,{maximumFractionDigits:0}) : '$' + v.toFixed(2); }
 function pctClass(v) { return v >= 0 ? 'positive' : 'negative'; }
 function pctStr(v) { return (v >= 0 ? '+' : '') + v.toFixed(1) + '%'; }

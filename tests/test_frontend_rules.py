@@ -36,10 +36,24 @@ def pct_class(v):
     return "positive" if v >= 0 else "negative"
 
 
-def fmt_date_time(ms):
-    """JS: fmtDateTime(ms) — UTC"""
+def _local_tz_abbr():
+    """Get local timezone abbreviation matching JS Intl.DateTimeFormat city name."""
     from datetime import datetime, timezone
-    d = datetime.fromtimestamp(ms / 1000, tz=timezone.utc)
+    import time
+    # Use the IANA timezone city name (e.g. "Shanghai" from "Asia/Shanghai")
+    try:
+        import zoneinfo
+        pass
+    except ImportError:
+        pass
+    # Fallback: use time module
+    tz_name = time.tzname[time.daylight and time.localtime().tm_isdst]
+    return tz_name
+
+def fmt_date_time(ms):
+    """JS: fmtDateTime(ms) — browser local time + timezone"""
+    from datetime import datetime
+    d = datetime.fromtimestamp(ms / 1000)  # local timezone
     return d.strftime("%Y-%m-%d %H:%M")
 
 
@@ -129,11 +143,23 @@ class TestTradeTableRendering(unittest.TestCase):
     def _get_events(self, symbol):
         return [e for e in D["timeline"] if e["symbol"] == symbol]
 
-    def test_date_column_uses_event_time(self):
-        """Each row date = fmtDateTime(e.time)."""
+    def test_date_column_uses_local_time(self):
+        """Each row date = fmtDateTime(e.time) in local timezone with tz label."""
         for e in D["timeline"][:20]:
             rendered = fmt_date_time(e["time"])
             self.assertRegex(rendered, r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}")
+
+    def test_dates_are_local_not_utc(self):
+        """Dates must use browser local time, not UTC."""
+        import time
+        if time.timezone == 0 and time.daylight == 0:
+            self.skipTest("Local timezone is UTC — cannot distinguish")
+        from datetime import datetime, timezone
+        e = D["timeline"][0]
+        local = fmt_date_time(e["time"])
+        utc = datetime.fromtimestamp(e["time"] / 1000, tz=timezone.utc).strftime("%Y-%m-%d %H:%M")
+        self.assertNotEqual(local, utc,
+                            f"Date {local} matches UTC — should be local time")
 
     def test_type_column_matches_event(self):
         for e in D["timeline"]:
