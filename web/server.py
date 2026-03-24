@@ -33,23 +33,21 @@ DATA = {}
 LOCK = threading.Lock()
 REFRESH_INTERVAL = 1800  # 30 min
 _STATE_FILE = Path(__file__).resolve().parent.parent / ".notify_state.json"
-_LAST_TRADE_TIMES = {}  # symbol -> latest trade time (for new trade detection)
+_LAST_TRADE_COUNTS = {}  # symbol -> number of completed trades
 
 
-def _load_trade_times():
-    """Load last trade times from disk to survive restarts."""
-    global _LAST_TRADE_TIMES
+def _load_state():
+    global _LAST_TRADE_COUNTS
     try:
         if _STATE_FILE.exists():
-            _LAST_TRADE_TIMES = json.loads(_STATE_FILE.read_text())
+            _LAST_TRADE_COUNTS = json.loads(_STATE_FILE.read_text())
     except Exception:
-        _LAST_TRADE_TIMES = {}
+        _LAST_TRADE_COUNTS = {}
 
 
-def _save_trade_times():
-    """Persist last trade times to disk."""
+def _save_state():
     try:
-        _STATE_FILE.write_text(json.dumps(_LAST_TRADE_TIMES))
+        _STATE_FILE.write_text(json.dumps(_LAST_TRADE_COUNTS))
     except Exception:
         pass
 
@@ -128,21 +126,19 @@ def compute_data():
     # Build unified timeline
     timeline = build_timeline(btc_trades, eth_trades, btc_equity, eth_equity)
 
-    # Notify new trades (compare with last known trade time per symbol)
-    global _LAST_TRADE_TIMES
+    # Notify new trades (compare event count per symbol)
+    global _LAST_TRADE_COUNTS
     for sym in ["BTC", "ETH"]:
         sym_events = [e for e in timeline if e["symbol"] == sym]
-        if not sym_events:
-            continue
-        latest = sym_events[0]  # timeline is sorted descending
-        prev_time = _LAST_TRADE_TIMES.get(sym, 0)
-        if prev_time > 0 and latest["time"] > prev_time:
-            # New trade detected — notify
-            new_events = [e for e in sym_events if e["time"] > prev_time]
+        count = len(sym_events)
+        prev_count = _LAST_TRADE_COUNTS.get(sym, 0)
+        if prev_count > 0 and count > prev_count:
+            # New events appeared — notify only the new ones
+            new_events = sym_events[:count - prev_count]  # descending, take from front
             for e in reversed(new_events):  # chronological order
                 notify_trade(e)
-        _LAST_TRADE_TIMES[sym] = latest["time"]
-    _save_trade_times()
+        _LAST_TRADE_COUNTS[sym] = count
+    _save_state()
 
     # Equity curves (normalized to 100)
     eq_dates = ts(btc_equity.index)
@@ -377,7 +373,7 @@ def _refresh_loop():
 
 @app.on_event("startup")
 def startup():
-    _load_trade_times()
+    _load_state()
     compute_data()
     threading.Thread(target=_refresh_loop, daemon=True).start()
 
