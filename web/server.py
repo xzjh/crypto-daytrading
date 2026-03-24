@@ -1,9 +1,12 @@
 """Dashboard server: FastAPI backend + background data refresh."""
 
+import json
+import os
 import threading
 import time
 import warnings
 from datetime import datetime, timezone
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -29,7 +32,26 @@ app.mount("/static", StaticFiles(directory="web/static"), name="static")
 DATA = {}
 LOCK = threading.Lock()
 REFRESH_INTERVAL = 1800  # 30 min
+_STATE_FILE = Path(__file__).resolve().parent.parent / ".notify_state.json"
 _LAST_TRADE_TIMES = {}  # symbol -> latest trade time (for new trade detection)
+
+
+def _load_trade_times():
+    """Load last trade times from disk to survive restarts."""
+    global _LAST_TRADE_TIMES
+    try:
+        if _STATE_FILE.exists():
+            _LAST_TRADE_TIMES = json.loads(_STATE_FILE.read_text())
+    except Exception:
+        _LAST_TRADE_TIMES = {}
+
+
+def _save_trade_times():
+    """Persist last trade times to disk."""
+    try:
+        _STATE_FILE.write_text(json.dumps(_LAST_TRADE_TIMES))
+    except Exception:
+        pass
 
 
 def compute_data():
@@ -120,6 +142,7 @@ def compute_data():
             for e in reversed(new_events):  # chronological order
                 notify_trade(e)
         _LAST_TRADE_TIMES[sym] = latest["time"]
+    _save_trade_times()
 
     # Equity curves (normalized to 100)
     eq_dates = ts(btc_equity.index)
@@ -354,6 +377,7 @@ def _refresh_loop():
 
 @app.on_event("startup")
 def startup():
+    _load_trade_times()
     compute_data()
     threading.Thread(target=_refresh_loop, daemon=True).start()
 
